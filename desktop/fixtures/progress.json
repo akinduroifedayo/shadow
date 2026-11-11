@@ -1,0 +1,1394 @@
+{
+ "settings": {
+  "web_lookups": true
+ },
+ "tests": [
+  {
+   "id": "a3f2",
+   "created_at": "2026-11-10T15:47:00",
+   "origin": {
+    "session_id": "local-demo",
+    "source": "desktop"
+   },
+   "current": {
+    "model": "nousresearch/hermes-4-405b",
+    "name": "Hermes 4 405B",
+    "maker": "Nous Research",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   "trial": {
+    "model": "nousresearch/hermes-4-70b-fp8-2026-08-14",
+    "name": "Hermes 4 70B",
+    "maker": "Nous Research",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   "judge": {
+    "mode": "third_maker",
+    "models": [
+     {
+      "model": "deepseek/deepseek-v3.2",
+      "name": "DeepSeek V3.2",
+      "maker": "DeepSeek",
+      "provider": "nous",
+      "provider_name": "Nous Portal"
+     }
+    ]
+   },
+   "judge_mode": "third_maker",
+   "judge_source": "auto",
+   "judge_disagreements": 0,
+   "seed": 7,
+   "days": 7,
+   "total": 212,
+   "picked": 30,
+   "cap": 5.0,
+   "spend": 0.71,
+   "web_lookups": true,
+   "web_lookup_turns": 7,
+   "state": "running",
+   "stop_reason": null,
+   "turns": [
+    {
+     "id": "t01",
+     "first_line": "Clean up the old backup folders on the NAS, keep the last 3",
+     "goal": "Clean up the old backup folders on the NAS, keep the last 3.",
+     "at": "2026-11-03T10:12:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "search_files",
+          "args": {
+           "path": "/Volumes/nas/backups"
+          },
+          "status": "ok",
+          "note": "9 folders"
+         },
+         {
+          "name": "terminal",
+          "args": {
+           "command": "rmdir /Volumes/nas/backups/2026-*"
+          },
+          "status": "not_run"
+         }
+        ],
+        "summary": "I'll remove the dated backup folders under /Volumes/nas/backups once each one is empty.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "search_files",
+          "args": {
+           "path": "/Volumes/nas/backups"
+          },
+          "status": "ok",
+          "note": "9 folders"
+         },
+         {
+          "name": "read_file",
+          "args": {
+           "path": "backups/README.md"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "terminal",
+          "args": {
+           "command": "ls -1td /Volumes/nas/backups/*/ | tail -n +4 | xargs rm -rf"
+          },
+          "status": "not_run"
+         }
+        ],
+        "summary": "This deletes every backup folder except the 3 newest by date. The README says nothing else depends on them.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     },
+     "original_answer": "I listed /Volumes/nas/backups and found 9 dated folders. Keeping the 3 newest (2026-11-01, 2026-10-25, 2026-10-18), the command to remove the other 6 is ready; say go and I will run it."
+    },
+    {
+     "id": "t06",
+     "first_line": "Find every place we still call the v1 billing API",
+     "goal": "Find every place we still call the v1 billing API.",
+     "at": "2026-11-02T14:02:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "src/auth.ts"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read src/auth.ts first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "docs/pricing.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read docs/pricing.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t02",
+     "first_line": "Refactor the token refresh in auth.ts so it retries once",
+     "goal": "Refactor the token refresh in auth.ts so it retries once.",
+     "at": "2026-11-03T15:40:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "README.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read README.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t07",
+     "first_line": "Rename the photos in ~/Desktop/trip by date taken",
+     "goal": "Rename the photos in ~/Desktop/trip by date taken.",
+     "at": "2026-11-05T19:45:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "the"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "src/auth.ts"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "the"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read src/auth.ts first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t08",
+     "first_line": "Write a Python script that dedupes the contacts CSV",
+     "goal": "Write a Python script that dedupes the contacts CSV.",
+     "at": "2026-11-02T16:10:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "README.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read README.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t11",
+     "first_line": "Bump the plugin hooks from 0.9 to 0.10 and fix the breakage",
+     "goal": "Bump the plugin hooks from 0.9 to 0.10 and fix the breakage.",
+     "at": "2026-11-09T09:15:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "docs/pricing.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read docs/pricing.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "scripts/backup.sh"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read scripts/backup.sh first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t12",
+     "first_line": "What changed in the auth service between v2.3 and v2.4?",
+     "goal": "What changed in the auth service between v2.3 and v2.4?",
+     "at": "2026-11-03T13:00:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "src/auth.ts"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read src/auth.ts first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "docs/pricing.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read docs/pricing.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t13",
+     "first_line": "Add a retry with backoff to the webhook sender",
+     "goal": "Add a retry with backoff to the webhook sender.",
+     "at": "2026-11-04T17:20:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "a"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "src/auth.ts"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "a"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read src/auth.ts first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t14",
+     "first_line": "Turn these meeting notes into a short action list",
+     "goal": "Turn these meeting notes into a short action list.",
+     "at": "2026-11-04T11:00:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "README.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read README.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t15",
+     "first_line": "Check which of my repos still pin Node 18",
+     "goal": "Check which of my repos still pin Node 18.",
+     "at": "2026-11-05T10:40:00",
+     "source": "cli",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "package.json"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read package.json first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "README.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read README.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t16",
+     "first_line": "Write unit tests for the date parser in utils/dates.ts",
+     "goal": "Write unit tests for the date parser in utils/dates.ts.",
+     "at": "2026-11-06T09:30:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "scripts/backup.sh"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "unit"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read scripts/backup.sh first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "package.json"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "unit"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read package.json first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t17",
+     "first_line": "Find the biggest files in ~/Downloads and list them",
+     "goal": "Find the biggest files in ~/Downloads and list them.",
+     "at": "2026-11-06T18:05:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "docs/pricing.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read docs/pricing.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "scripts/backup.sh"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read scripts/backup.sh first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t18",
+     "first_line": "Translate the README intro into Spanish",
+     "goal": "Translate the README intro into Spanish.",
+     "at": "2026-11-07T15:10:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "src/auth.ts"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read src/auth.ts first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "docs/pricing.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read docs/pricing.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t19",
+     "first_line": "Why does the build fail only on CI?",
+     "goal": "Why does the build fail only on CI?",
+     "at": "2026-11-09T10:50:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "does"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "src/auth.ts"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "does"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read src/auth.ts first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t20",
+     "first_line": "Make the settings page form validate emails",
+     "goal": "Make the settings page form validate emails.",
+     "at": "2026-11-02T10:25:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "README.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read README.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "notes/2026-11.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read notes/2026-11.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t21",
+     "first_line": "Sort out the merge conflict in package.json",
+     "goal": "Sort out the merge conflict in package.json.",
+     "at": "2026-11-03T09:00:00",
+     "source": "cli",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "package.json"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read package.json first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "README.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read README.md first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t22",
+     "first_line": "Draft a reply to the landlord about the broken heater",
+     "goal": "Draft a reply to the landlord about the broken heater.",
+     "at": "2026-11-08T20:00:00",
+     "source": "telegram",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "scripts/backup.sh"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "a"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read scripts/backup.sh first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "package.json"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "a"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read package.json first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t23",
+     "first_line": "List the open PRs that touch the billing module",
+     "goal": "List the open PRs that touch the billing module.",
+     "at": "2026-11-04T14:30:00",
+     "source": "desktop",
+     "state": "done",
+     "usable": true,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "docs/pricing.md"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read docs/pricing.md first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "scripts/backup.sh"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read scripts/backup.sh first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     },
+     "judgment": {
+      "result": "same",
+      "reason_kind": "missed_request",
+      "reason": "the other answer missed part of the request.",
+      "agree": true,
+      "disagreement": false
+     }
+    },
+    {
+     "id": "t04",
+     "first_line": "Why is the nightly cron for the price scraper not firing?",
+     "goal": "Why is the nightly cron for the price scraper not firing?",
+     "at": "2026-11-05T08:30:00",
+     "source": "cli",
+     "state": "judging",
+     "usable": false,
+     "runs": {
+      "new": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "scripts/backup.sh"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "is"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is a short plan: I read scripts/backup.sh first, then answered the request in three steps.",
+        "cost": 0.014,
+        "duration_s": 8.8
+       }
+      ],
+      "yours": [
+       {
+        "tool_calls": [
+         {
+          "name": "read_file",
+          "args": {
+           "path": "package.json"
+          },
+          "status": "ok"
+         },
+         {
+          "name": "search_files",
+          "args": {
+           "query": "is"
+          },
+          "status": "ok"
+         }
+        ],
+        "summary": "Here is what I would do: I read package.json first, then answered the request in three steps.",
+        "cost": 0.036,
+        "duration_s": 13.7
+       }
+      ]
+     }
+    },
+    {
+     "id": "t09",
+     "first_line": "Explain why this regex misses multi-line comments",
+     "goal": "Explain why this regex misses multi-line comments.",
+     "at": "2026-11-07T10:00:00",
+     "source": "desktop",
+     "state": "running",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t10",
+     "first_line": "Plan 3 days in Lisbon with one museum a day",
+     "goal": "Plan 3 days in Lisbon with one museum a day.",
+     "at": "2026-11-08T12:30:00",
+     "source": "telegram",
+     "state": "running",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t05",
+     "first_line": "Draft a Slack message to Sam about moving the launch",
+     "goal": "Draft a Slack message to Sam about moving the launch.",
+     "at": "2026-11-06T11:20:00",
+     "source": "telegram",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t24",
+     "first_line": "Convert the CSV export to JSON with the same keys",
+     "goal": "Convert the CSV export to JSON with the same keys.",
+     "at": "2026-11-05T13:15:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t25",
+     "first_line": "Compare the two pricing pages and list differences",
+     "goal": "Compare the two pricing pages and list differences.",
+     "at": "2026-11-06T13:40:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t26",
+     "first_line": "Write a bash alias that opens today's notes file",
+     "goal": "Write a bash alias that opens today's notes file.",
+     "at": "2026-11-07T08:20:00",
+     "source": "cli",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t27",
+     "first_line": "Explain this stack trace from the worker logs",
+     "goal": "Explain this stack trace from the worker logs.",
+     "at": "2026-11-09T16:00:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t28",
+     "first_line": "Rename the exported function getUser to fetchUser everywhere",
+     "goal": "Rename the exported function getUser to fetchUser everywhere.",
+     "at": "2026-11-02T11:45:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t29",
+     "first_line": "Summarize this week's commits for the changelog",
+     "goal": "Summarize this week's commits for the changelog.",
+     "at": "2026-11-09T17:30:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t30",
+     "first_line": "Set up a cron that backs up ~/notes every night",
+     "goal": "Set up a cron that backs up ~/notes every night.",
+     "at": "2026-11-08T09:10:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    },
+    {
+     "id": "t03",
+     "first_line": "Summarize the three PDFs in ~/Reading/agents and compare",
+     "goal": "Summarize the three PDFs in ~/Reading/agents and compare.",
+     "at": "2026-11-04T09:05:00",
+     "source": "desktop",
+     "state": "waiting",
+     "usable": false,
+     "runs": {
+      "new": [],
+      "yours": []
+     }
+    }
+   ],
+   "totals": null,
+   "routes": {
+    "current": {
+     "provider": "nous",
+     "model": "nousresearch/hermes-4-405b",
+     "base_url": "https://fixture.invalid/v1",
+     "api_mode": "chat_completions"
+    },
+    "trial": {
+     "provider": "nous",
+     "model": "nousresearch/hermes-4-70b-fp8-2026-08-14",
+     "base_url": "https://fixture.invalid/v1",
+     "api_mode": "chat_completions"
+    }
+   },
+   "live": {
+    "minutes_left": 10,
+    "own_session": true,
+    "running": {
+     "count": 2,
+     "provider": "Nous Portal",
+     "side": "yours",
+     "max": 4
+    }
+   }
+  }
+ ],
+ "switch": null,
+ "start": {
+  "try": "nousresearch/hermes-4-70b-fp8-2026-08-14",
+  "current": {
+   "model": "nousresearch/hermes-4-405b",
+   "name": "Hermes 4 405B",
+   "maker": "Nous Research",
+   "provider": "nous",
+   "provider_name": "Nous Portal"
+  },
+  "models": [
+   {
+    "model": "nousresearch/hermes-4-70b-fp8-2026-08-14",
+    "name": "Hermes 4 70B",
+    "maker": "Nous Research",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   {
+    "model": "deepseek/deepseek-v3.2",
+    "name": "DeepSeek V3.2",
+    "maker": "DeepSeek",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   {
+    "model": "qwen/qwen-3.5-72b",
+    "name": "Qwen 3.5 72B",
+    "maker": "Alibaba",
+    "provider": "openrouter",
+    "provider_name": "OpenRouter"
+   },
+   {
+    "model": "moonshot/kimi-k2",
+    "name": "Kimi K2",
+    "maker": "Moonshot",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   {
+    "model": "zhipu/glm-4.6",
+    "name": "GLM 4.6",
+    "maker": "Zhipu",
+    "provider": "openrouter",
+    "provider_name": "OpenRouter"
+   }
+  ],
+  "facts": {
+   "total": 212,
+   "days": 7,
+   "picked": 30,
+   "left_out": {
+    "too_long": 61,
+    "too_short": 48,
+    "email": 12
+   },
+   "scrub": {
+    "keys": 2,
+    "emails": 5
+   },
+   "backup_judge_costs": {
+    "nousresearch/hermes-4-70b-fp8-2026-08-14": 0.3,
+    "nousresearch/hermes-4-405b": 0.45,
+    "deepseek/deepseek-v3.2": 0.4,
+    "qwen/qwen-3.5-72b": 0.35,
+    "moonshot/kimi-k2": 0.55,
+    "zhipu/glm-4.6": 0.45
+   },
+   "replay_estimates": {
+    "deepseek/deepseek-v3.2": 1.2,
+    "moonshot/kimi-k2": 1.65,
+    "qwen/qwen-3.5-72b": 1.35,
+    "zhipu/glm-4.6": 1.4
+   },
+   "replay_estimate": 1.5,
+   "cap": 5.0,
+   "minutes": 25,
+   "hidden_maker": "Hermes",
+   "judges": [
+    {
+     "model": "deepseek/deepseek-v3.2",
+     "name": "DeepSeek V3.2",
+     "maker": "DeepSeek",
+     "provider": "nous",
+     "provider_name": "Nous Portal",
+     "cost": 0.4,
+     "auto": true
+    },
+    {
+     "model": "moonshot/kimi-k2",
+     "name": "Kimi K2",
+     "maker": "Moonshot",
+     "provider": "nous",
+     "provider_name": "Nous Portal",
+     "cost": 0.55
+    },
+    {
+     "model": "qwen/qwen-3.5-72b",
+     "name": "Qwen 3.5 72B",
+     "maker": "Alibaba",
+     "provider": "openrouter",
+     "provider_name": "OpenRouter",
+     "cost": 0.35
+    },
+    {
+     "model": "zhipu/glm-4.6",
+     "name": "GLM 4.6",
+     "maker": "Zhipu",
+     "provider": "openrouter",
+     "provider_name": "OpenRouter",
+     "cost": 0.45
+    }
+   ]
+  }
+ },
+ "notices": {
+  "keep": "Kept Hermes 4 405B. Nothing changed.",
+  "doctor": "Setup check: all three plugin permissions are on, 4 other models to try, and a judge from a third maker."
+ }
+}

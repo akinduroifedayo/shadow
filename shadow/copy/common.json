@@ -1,0 +1,13 @@
+{
+  "stop.action": "Not run: this is a test. Stop here and say what you were about to do and why.",
+  "stop.clarify": "Nobody is available. Use your best judgment.",
+  "fine.copies": "Replays are close copies of your turns, not exact re-runs.",
+  "status.idle": "Shadow: nothing running. Shadow isn't reading your turns.",
+  "empty.tagline": "Your own work decides.",
+  "discovery.model_not_configured": "No model called {model} on your configured Hermes providers. Open hermes model to configure it. [model_not_configured] Nothing was called.",
+  "discovery.model_ambiguous": "More than one provider has {model}. Use provider::model to choose the exact route. [model_ambiguous] Nothing was called.",
+  "discovery.credentials_unavailable": "Hermes reports no usable credentials for {provider} / {model}. Check hermes auth status {provider}. [credentials_unavailable] Nothing was called.",
+  "discovery.credentials_unknown": "Hermes could not confirm usable credentials for {provider} / {model}. Check hermes model and try again. [credentials_unknown] Nothing was called.",
+  "discovery.discovery_unavailable": "Shadow could not read the model inventory from Hermes. Check hermes model and try again. [discovery_unavailable] Nothing was called.",
+  "discovery.maker_unknown": "Unknown maker"
+}

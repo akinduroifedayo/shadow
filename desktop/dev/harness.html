@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shadow page harness</title>
+<script type="importmap">
+{ "imports": { "react": "/react.js", "react/jsx-runtime": "/react.js", "@hermes/plugin-sdk": "/sdk.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: -apple-system, "Inter", system-ui, sans-serif; color: #1f2328; }
+  .app { display: grid; grid-template-columns: 248px 1fr; grid-template-rows: 1fr 28px; height: 100vh; }
+  .side { background: #f6f8fa; border-right: 1px solid #d0d7de; display: flex; flex-direction: column; padding: 14px 10px 10px; font-size: 13px; }
+  .prof { display: flex; align-items: center; gap: 8px; padding: 2px 8px 12px; }
+  .prof .av { width: 22px; height: 22px; border-radius: 4px; background: #1f2328; color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; }
+  .prof span { color: #656d76; font-size: 12px; margin-left: auto; }
+  .nav div { height: 28px; display: flex; align-items: center; padding: 0 8px 0 33px; border-radius: 4px; }
+  .nav div.on { background: #e3edff; color: #0053fd; font-weight: 500; }
+  .grp { font-size: 12px; color: #656d76; padding: 14px 8px 4px; }
+  .foot { margin-top: auto; border-top: 1px solid #d0d7de; padding-top: 8px; }
+  main { min-width: 0; min-height: 0; overflow: hidden; }
+  #root { height: 100%; }
+  .status { grid-column: 1 / -1; border-top: 1px solid #d0d7de; background: #f6f8fa; display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px; color: #656d76; }
+  .status .model { color: #1f2328; }
+  .status .dot { width: 6px; height: 6px; border-radius: 50%; background: #1a7f37; display: inline-block; margin-right: 6px; }
+  .status .r { margin-left: auto; }
+  #toast { position: fixed; right: 16px; bottom: 40px; background: #1f2328; color: #fff; font-size: 13px; padding: 8px 12px; border-radius: 6px; max-width: 420px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="prof"><div class="av">H</div><b>Hermes</b><span>default</span></div>
+    <nav class="nav"><div>New session</div><div>Capabilities</div><div>Messaging</div><div>Artifacts</div><div>Scheduled jobs</div><div class="on" id="nav"></div></nav>
+    <div class="grp">Sessions</div>
+    <div class="foot nav"><div>Settings</div></div>
+  </aside>
+  <main><div id="root"></div></main>
+  <footer class="status"><span><span class="dot"></span><span id="prov">Nous Portal</span></span><span class="model" id="model">Hermes 4 405B</span><span id="status-slot"></span><span class="r">harness · fixture data</span></footer>
+</div>
+<div id="toast" hidden></div>
+<script type="module">
+  import { createElement as h, render } from '/react.js'
+  import plugin from '/plugin.js'
+  const registry = []
+  const ctx = {
+    onDispose() {}, setInterval(fn, ms) { const id = setInterval(fn, ms); return () => clearInterval(id) },
+    onEvent: (type, fn) => window.__hostOnEvent(type, fn),
+    register(c) { registry.push(c); return () => {} }, registerMany(cs) {
+      cs.forEach(c => {
+        registry.push(c)
+        if (c.area === 'sidebar.nav') document.getElementById('nav').textContent = c.data.label
+      })
+      return () => cs.forEach(c => { const i = registry.indexOf(c); if (i >= 0) registry.splice(i, 1) })
+    }
+  }
+  const sdk = await import('@hermes/plugin-sdk')
+  window.__hostOnEvent = sdk.host.onEvent
+  plugin.register(ctx)
+  const route = registry.find(c => c.area === sdk.ROUTES_AREA)
+  const status = registry.find(c => c.area === sdk.STATUSBAR_AREAS.left)
+  if (new URLSearchParams(location.search).get('s')?.startsWith('watch')) {
+    document.getElementById('prov').textContent = 'OpenRouter'
+    document.getElementById('model').textContent = 'Qwen 3.5 72B'
+  }
+  render(route.render(), document.getElementById('root'))
+  render(status.render(), document.getElementById('status-slot'))
+</script>
+</body>
+</html>

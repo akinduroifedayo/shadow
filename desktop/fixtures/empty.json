@@ -1,0 +1,125 @@
+{
+ "settings": {
+  "web_lookups": true
+ },
+ "tests": [],
+ "switch": null,
+ "start": {
+  "try": "nousresearch/hermes-4-70b-fp8-2026-08-14",
+  "current": {
+   "model": "nousresearch/hermes-4-405b",
+   "name": "Hermes 4 405B",
+   "maker": "Nous Research",
+   "provider": "nous",
+   "provider_name": "Nous Portal"
+  },
+  "models": [
+   {
+    "model": "nousresearch/hermes-4-70b-fp8-2026-08-14",
+    "name": "Hermes 4 70B",
+    "maker": "Nous Research",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   {
+    "model": "deepseek/deepseek-v3.2",
+    "name": "DeepSeek V3.2",
+    "maker": "DeepSeek",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   {
+    "model": "qwen/qwen-3.5-72b",
+    "name": "Qwen 3.5 72B",
+    "maker": "Alibaba",
+    "provider": "openrouter",
+    "provider_name": "OpenRouter"
+   },
+   {
+    "model": "moonshot/kimi-k2",
+    "name": "Kimi K2",
+    "maker": "Moonshot",
+    "provider": "nous",
+    "provider_name": "Nous Portal"
+   },
+   {
+    "model": "zhipu/glm-4.6",
+    "name": "GLM 4.6",
+    "maker": "Zhipu",
+    "provider": "openrouter",
+    "provider_name": "OpenRouter"
+   }
+  ],
+  "facts": {
+   "total": 212,
+   "days": 7,
+   "picked": 30,
+   "left_out": {
+    "too_long": 61,
+    "too_short": 48,
+    "email": 12
+   },
+   "scrub": {
+    "keys": 2,
+    "emails": 5
+   },
+   "backup_judge_costs": {
+    "nousresearch/hermes-4-70b-fp8-2026-08-14": 0.3,
+    "nousresearch/hermes-4-405b": 0.45,
+    "deepseek/deepseek-v3.2": 0.4,
+    "qwen/qwen-3.5-72b": 0.35,
+    "moonshot/kimi-k2": 0.55,
+    "zhipu/glm-4.6": 0.45
+   },
+   "replay_estimates": {
+    "deepseek/deepseek-v3.2": 1.2,
+    "moonshot/kimi-k2": 1.65,
+    "qwen/qwen-3.5-72b": 1.35,
+    "zhipu/glm-4.6": 1.4
+   },
+   "replay_estimate": 1.5,
+   "cap": 5.0,
+   "minutes": 25,
+   "hidden_maker": "Hermes",
+   "judges": [
+    {
+     "model": "deepseek/deepseek-v3.2",
+     "name": "DeepSeek V3.2",
+     "maker": "DeepSeek",
+     "provider": "nous",
+     "provider_name": "Nous Portal",
+     "cost": 0.4,
+     "auto": true
+    },
+    {
+     "model": "moonshot/kimi-k2",
+     "name": "Kimi K2",
+     "maker": "Moonshot",
+     "provider": "nous",
+     "provider_name": "Nous Portal",
+     "cost": 0.55
+    },
+    {
+     "model": "qwen/qwen-3.5-72b",
+     "name": "Qwen 3.5 72B",
+     "maker": "Alibaba",
+     "provider": "openrouter",
+     "provider_name": "OpenRouter",
+     "cost": 0.35
+    },
+    {
+     "model": "zhipu/glm-4.6",
+     "name": "GLM 4.6",
+     "maker": "Zhipu",
+     "provider": "openrouter",
+     "provider_name": "OpenRouter",
+     "cost": 0.45
+    }
+   ]
+  }
+ },
+ "notices": {
+  "keep": "Kept Hermes 4 405B. Nothing changed.",
+  "doctor": "Setup check: all three plugin permissions are on, 4 other models to try, and a judge from a third maker."
+ }
+}

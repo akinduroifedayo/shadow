@@ -1,0 +1,35 @@
+name: shadow
+version: 0.1.0
+description: Test a new model on your own recent conversations, judged blind in both orders, then switch with undo.
+author: akinduroifedayo
+license: MIT
+homepage: https://github.com/akinduroifedayo/shadow
+requires_hermes: ">=0.23.1"
+capabilities:
+  - llm.provider_override
+  - llm.model_override
+provides_tools:
+  - shadow_read
+  - shadow_search
+  - shadow_web
+  - shadow_clarify
+  - shadow_trial_step
+  - shadow_setup_check
+provides_hooks:
+  - subagent_start
+  - post_api_request
+  - post_compaction
+  - pre_llm_call
+  - pre_tool_call
+  - pre_api_request
+  - api_request_error
+  - post_tool_call
+  - subagent_stop
+  - on_session_start
+  - on_session_end
+  - pre_command
+provides_middleware:
+  - tool_execution
+  - llm_execution
+  - llm_request
+requires_env: []
