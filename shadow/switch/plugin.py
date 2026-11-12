@@ -63,6 +63,17 @@ class SwitchPlugin:
         trial = getattr(self.ctx, 'shadow_trial', None)
         return trial.model_catalog() if trial is not None else discover_models()
 
+    def require_target_change(self, route):
+        from ..common.models import Model
+        from .decision import require_model_change
+
+        if isinstance(route, dict):
+            route = Model(**route)
+        catalog = self.model_catalog()
+        current = catalog.require(catalog.current.provider, catalog.current.model)
+        target = catalog.require(route.provider, route.model)
+        require_model_change(current, target)
+
     def validate_routes(self, old, new):
         catalog = self.model_catalog()
         for route in (old, new):
@@ -178,6 +189,7 @@ class SwitchPlugin:
                     proposal = self.lookup_proposal(target)
                     if proposal is None:
                         return copy("switch.error.no_result")
+                    self.require_target_change(proposal.new)
                     self.validate_routes(proposal.old, proposal.new)
                     self.engine.validate_routes(proposal)
                     from .decision import switch_warning
@@ -213,6 +225,7 @@ class SwitchPlugin:
             from ..trial.cards import switch_limit
 
             if record and record.get('totals'):
+                self.require_target_change(record['trial'])
                 limit = switch_limit(record)
                 if limit:
                     raise SwitchBlocked(limit)
@@ -281,6 +294,7 @@ class SwitchPlugin:
             return ""
         restoring = False
         if action in {"advance", "resume"} and self.engine.record is not None:
+            self.engine.reconcile_config(force=True)
             self.validate_routes(self.engine.record.old, self.engine.record.new)
         if action == "advance":
             self.engine.advance()

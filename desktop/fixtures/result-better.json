@@ -1630,6 +1630,7 @@
      "counts_readable": "yes"
     }
    },
+   "intent": "switch",
    "routes": {
     "current": {
      "provider": "nous",

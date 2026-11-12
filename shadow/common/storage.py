@@ -19,6 +19,13 @@ def plugin_db():
     return database('shadow')
 
 
+def parse_trial_record(record):
+    record.setdefault('intent', 'switch')
+    if record['intent'] not in {'switch', 'compare'}:
+        raise ValueError('invalid trial intent')
+    return record
+
+
 class Store:
     def __init__(self, path=None):
         self.path = Path(path) if path else None
@@ -61,7 +68,7 @@ class Store:
             return self._record(row[0]) if row else None
 
     def _record(self, text):
-        record = json.loads(text)
+        record = parse_trial_record(json.loads(text))
         if self._db().execute('SELECT 1 FROM trial_cancellations WHERE id=?', (record['id'],)).fetchone():
             record['state'] = 'cancelled'
             if record.get('stop_reason') != 'unpriceable':

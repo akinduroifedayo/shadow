@@ -52,6 +52,7 @@
   "switch.help": "/shadow status\n/shadow switch [id]\n/shadow undo\n/shadow doctor",
   "switch.cli.help": "Try a model on your own work, then switch a little at a time.",
   "switch.error.no_result": "No saved test allows this switch.",
+  "switch.already_active": "{model} is already your active model. Nothing to switch.",
   "switch.error.busy": "A switch is in progress. Finish it or undo it first.",
   "switch.error.compatibility": "Gradual switching is waiting for the exact model pair to pass its compatibility check. Run hermes shadow doctor --verify-pair to check it. Nothing changed.",
   "switch.error.invalid": "This switch action isn't available in the current state.",
@@ -92,6 +93,9 @@
   "switch.override.unbacked": "Shadow has no passing test for {new}. Switch anyway?",
   "switch.override.warning": "{headline}\nSwitch anyway?",
   "switch.override.confirm_command": "To confirm, run: {command} switch {target} --anyway",
+  "switch.override.reason.worse": "the test favored your current model",
+  "switch.override.reason.too_close": "the test did not establish a clear difference",
+  "switch.override.reason.no_passing_test": "no passing test was available",
   "switch.override.status": "Owner override ({reason}) at {at}: {headline}",
   "switch.override.confirm": "Switch anyway",
   "switch.override.cancel": "Cancel"

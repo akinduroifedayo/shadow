@@ -263,6 +263,7 @@ function Verdict({ page, testId, generation = store.generation }) {
         h(RateBar, { bar: v.bar }),
         h(ModelTable, { table: v.table }),
         h('span', { className: 'vword advice' }, v.word),
+        v.advice_hint && h('p', { className: 'second advice-hint' }, v.advice_hint),
         h('p', { className: 'vsent' }, v.reason),
         v.second_look && h('p', { className: 'second' }, v.second_look)),
       h('div', null,
@@ -546,10 +547,12 @@ function StartFlow({ page, onClose, generation = store.generation }) {
   const begin = b => {
     if (!store.current(generation)) return
     if (b.id === 'cancel') return onClose()
-    act(b.id, { test_id: page.test_id, model: card.model, judge: card.judge_slug || undefined,
+    const action = b.id === 'compare' ? 'start' : b.id
+    act(action, { test_id: page.test_id, model: card.model, judge: card.judge_slug || undefined,
+      intent: b.id === 'compare' ? 'compare' : 'switch',
       judge_mode: card.judge_mode, judge_models: card.judge_models, estimate: card.estimate, consent: card.consent
     }, generation, refreshed => setStage(s => ({ ...s, card: refreshed, open: false })))
-      .then(ok => ok && b.id === 'start' && store.current(generation) && onClose())
+      .then(ok => ok && action === 'start' && store.current(generation) && onClose())
   }
   return h('section', { className: 'startwrap' }, h('article', { className: 'scard', 'aria-label': card.title },
     h('h2', null, card.title),

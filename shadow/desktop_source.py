@@ -1,8 +1,11 @@
 """Live Desktop source: saved tests from the profile store the trial line already uses."""
 
 import contextvars
+from collections import Counter
 import secrets
 import threading
+
+from .common.models import canonical_slug
 
 
 class ProfileSource:
@@ -56,12 +59,16 @@ class ProfileSource:
     def models(self):
         current, catalog = self.trial.models()
         rows = []
-        seen = {(current.provider, current.model)}
+        seen = {(current.provider, canonical_slug(current.model))}
         for model in catalog:
-            route = (model.provider, model.model)
+            route = (model.provider, canonical_slug(model.model))
             if route not in seen:
                 seen.add(route)
                 rows.append({**_model_row(model), 'model': f'{model.provider}::{model.model}'})
+        labels = Counter(row['name'] for row in rows)
+        for row in rows:
+            if labels[row['name']] > 1:
+                row['name'] = row['model'].split('::', 1)[1]
         return rows
 
     def start_facts(self, model):
@@ -166,7 +173,7 @@ class ProfileSource:
                 record = engine.prepare(preview['selection'], preview['current'], preview['trial'],
                                         preview['catalog'], cap=args.budget, days=args.days,
                                         judge=params.get('judge'), origin=params.get('origin'),
-                                        web_lookups=preview['web_lookups'],
+                                        web_lookups=preview['web_lookups'], intent=params.get('intent', 'switch'),
                                         service_tiers=profile_service_tiers(self.trial.configuration()))
                 if not record['can_start']:
                     raise DesktopError('trial.unavailable')
@@ -204,9 +211,11 @@ class ProfileSource:
             active = self.trial.active_record()
             if active:
                 raise DesktopError('trial.still_running', id=active['id'])
+            switch.engine.reconcile_config(force=True)
             proposal = switch.lookup_proposal(params.get('test_id') or params.get('model'))
             if proposal is None:
                 raise DesktopError('switch.error.no_result')
+            switch.require_target_change(proposal.new)
             switch.validate_routes(proposal.old, proposal.new)
             switch.engine.validate_routes(proposal)
             confirmed = params.get('confirm_override') is True

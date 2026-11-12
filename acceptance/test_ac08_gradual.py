@@ -92,6 +92,7 @@ def check(mac: bool = False):
     offered.start(cross, switch_id="cross")
     probe.expect(offered.record.mode == "all_at_once", "a different provider started a gradual switch")
     actions = result_actions({
+        "intent": "switch",
         "current": {"provider": OLD.provider, "model": OLD.model},
         "trial": {"provider": CROSS.provider, "model": CROSS.model},
         "routes": {

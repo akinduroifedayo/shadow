@@ -7,6 +7,41 @@ from .judge import REASONS
 from .panel import aggregate_panel
 
 
+
+def shown_pct(rate, *, upper, keep_off_zero=False):
+    """Outward percent bound. For a Better/Worse call, add decimals if a whole
+    percent would print as 0, so the printed range stays on the same side of even."""
+    whole = math.ceil(100 * rate) if upper else math.floor(100 * rate)
+    if not keep_off_zero or whole != 0 or rate == 0:
+        return whole
+    places = 1
+    while True:
+        scale = 10 ** (2 + places)
+        stepped = math.ceil(rate * scale) if upper else math.floor(rate * scale)
+        shown = stepped / (10 ** places)
+        if shown != 0 and (shown > 0) == (rate > 0):
+            return shown
+        places += 1
+
+
+def format_signed_pct(value, minus='-'):
+    if not value:
+        return '0%'
+    sign = '+' if value > 0 else minus
+    magnitude = abs(value)
+    if isinstance(value, int) or float(magnitude).is_integer():
+        body = str(int(magnitude))
+    else:
+        body = f'{magnitude:.8f}'.rstrip('0').rstrip('.')
+    return f'{sign}{body}%'
+
+
+def format_rate_pct(value):
+    if isinstance(value, int) or float(value).is_integer():
+        return str(int(value))
+    return f'{value:.8f}'.rstrip('0').rstrip('.')
+
+
 def sign_p(won, lost):
     n = won + lost
     return min(1.0, 2 * sum(math.comb(n, k) for k in range(max(won, lost), n + 1)) / 2 ** n) if n else 1.0
@@ -24,7 +59,8 @@ def statistics_for(won, same, lost, *, judge_agree=None, varied=0, reruns=0, sec
     se = math.sqrt(lp + wp - (lp - wp) ** 2 / np) / np
     upper = d + (1.96 if second_look else 1.645) * se
     p = sign_p(won, lost)
-    alpha = .025 if second_look else .05
+    z = 2.241 if second_look else 1.96
+    low, high = -d - z * se, -d + z * se
     reason = None
     if stop_reason == 'unpriceable':
         word, reason = 'not_enough', 'unpriceable'
@@ -36,20 +72,38 @@ def statistics_for(won, same, lost, *, judge_agree=None, varied=0, reruns=0, sec
         word, reason = 'not_enough', 'judge_unsure'
     elif reruns >= 10 and varied >= 6:
         word, reason = 'not_enough', 'runs_varied'
-    elif p < alpha and won > lost:
+    elif low > 0:
         word = 'better'
-    elif p < alpha and lost > won:
+    elif high < 0:
         word = 'worse'
     elif upper <= .15:
         word = 'holds_up'
     else:
         word, reason = 'too_close', 'too_close'
+    off_zero = word in {'better', 'worse'}
     return {'word': word, 'cant_call_reason': reason, 'won': won, 'same': same, 'lost': lost, 'pairs': n,
             'p': p, 'U': upper, 'net_pct': math.trunc(100 * (won - lost) / n) if n else 0,
-            'ci95_low': math.floor(100 * (-d - 1.96 * se)), 'ci95_high': math.ceil(100 * (-d + 1.96 * se)),
+            'interval_low': low, 'interval_high': high,
+            'ci95_low': shown_pct(low, upper=False, keep_off_zero=off_zero),
+            'ci95_high': shown_pct(high, upper=True, keep_off_zero=off_zero),
             'ci_too_wide': n < 20, 'holds_low': math.floor(-100 * upper), 'worst_per_100': math.ceil(100 * upper),
             'judge_agree': agree, 'judge_pairs': n, 'reruns': reruns, 'varied': varied, 'second_look': second_look,
             'lean': 'better' if won - lost >= 2 else 'worse' if lost - won >= 2 else 'neither'}
+
+
+def uses_panel(record):
+    return record.get('judge_mode') == 'backup_both' and record.get('judge_policy')
+
+
+def refresh_statistics(record):
+    if 'totals' not in record or uses_panel(record):
+        return record
+    totals = record['totals']
+    stats = statistics_for(totals['won'], totals['same'], totals['lost'],
+                           judge_agree=totals['judge_agree'], varied=totals['varied'], reruns=totals['reruns'],
+                           second_look=totals['second_look'], stop_reason=record.get('stop_reason'),
+                           judge_unreachable=totals['cant_call_reason'] == 'judge_unreachable')
+    return {**record, 'totals': {**totals, **stats}}
 
 
 def half_up(value, places=1):
@@ -87,7 +141,7 @@ def receipt_for(turns, *, plan_new=False, plan_yours=False):
 
 def finalize(record):
     usable = [t for t in record['turns'] if t.get('usable')]
-    panel = aggregate_panel(record, usable) if record.get('judge_mode') == 'backup_both' and record.get('judge_policy') else None
+    panel = aggregate_panel(record, usable) if uses_panel(record) else None
     if panel is None:
         for turn in usable:
             failure = turn['judgment'].get('failure_result')
@@ -111,6 +165,9 @@ def finalize(record):
                     stats.update(word='worse', cant_call_reason=None)
                 else:
                     stats.update(word='not_enough', cant_call_reason='panel_uncertain')
+    off_zero = stats['word'] in {'better', 'worse'}
+    stats['ci95_low'] = shown_pct(stats['interval_low'], upper=False, keep_off_zero=off_zero)
+    stats['ci95_high'] = shown_pct(stats['interval_high'], upper=True, keep_off_zero=off_zero)
     receipt = receipt_for(record['turns'], plan_new=record['trial'].get('plan', False), plan_yours=record['current'].get('plan', False))
     receipt['counts_readable'] = 'no' if stats['cant_call_reason'] in {'judge_unsure', 'judge_ineligible', 'runs_varied'} else 'so_far' if stats['pairs'] < 20 else 'yes'
     stats['receipt'] = receipt

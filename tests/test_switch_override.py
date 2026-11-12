@@ -92,8 +92,11 @@ def test_desktop_rpc_warns_then_confirmation_uses_normal_switch_engine(word):
     assert any('Owner override' in row['text'] for row in response['page']['switch']['log']['rows'])
 
 
-@pytest.mark.parametrize('word', ['worse', 'too_close', 'not_enough', 'better'])
-def test_live_desktop_adapter_enforces_confirmation_and_persists_override(tmp_path, word):
+@pytest.mark.parametrize('word,counts', [
+    ('worse', (3, 9, 18)), ('too_close', (4, 20, 6)),
+    ('not_enough', (7, 8, 4)), ('better', (15, 11, 4)),
+])
+def test_live_desktop_adapter_enforces_confirmation_and_persists_override(tmp_path, word, counts):
     import sqlite3
     from fixtures import CURRENT, OUTSIDE, TRIAL, FakeContext
     from shadow.common.copy import load_copy
@@ -109,10 +112,8 @@ def test_live_desktop_adapter_enforces_confirmation_and_persists_override(tmp_pa
     trial = TrialPlugin(ctx, store=TrialStore(tmp_path / 'trial.sqlite'), current=CURRENT,
                         catalog=[CURRENT, TRIAL, OUTSIDE])
     ctx.shadow_trial = trial
-    saved = card_record(tmp_path)
-    saved['totals']['word'] = word
-    if word == 'not_enough':
-        saved['totals']['cant_call_reason'] = 'judge_ineligible'
+    saved = card_record(tmp_path, counts)
+    assert saved['totals']['word'] == word
     trial.store.save(saved)
     engine = Engine(Store(sqlite3.connect(':memory:')), verified_pair=lambda *_: True)
     switch = SwitchPlugin(ctx, engine, config_reader=lambda: {}, proposal_lookup=trial.proposal)
@@ -332,15 +333,19 @@ def live_switch(tmp_path):
                                        ('api_mode', 'trial.switch_incompatible'),
                                        ('base_url', 'trial.switch_incompatible'),
                                        ('pair', 'trial.switch_compatibility')])
-@pytest.mark.parametrize('word', ['better', 'holds_up', 'worse', 'too_close', 'not_enough'])
-def test_blocked_saved_routes_offer_no_override_on_any_surface(live_switch, issue, key, word):
+@pytest.mark.parametrize('word,counts', [
+    ('better', (15, 11, 4)), ('holds_up', (6, 19, 5)), ('worse', (3, 9, 18)),
+    ('too_close', (4, 20, 6)), ('not_enough', (7, 8, 4)),
+])
+def test_blocked_saved_routes_offer_no_override_on_any_surface(tmp_path, live_switch, issue, key, word, counts):
     from shadow.common.copy import copy
     from shadow.trial.cards import render_verdict, result_actions
 
-    trial, switch, rpc, saved = live_switch
-    saved['totals']['word'] = word
-    if word == 'not_enough':
-        saved['totals']['cant_call_reason'] = 'judge_ineligible'
+    from test_cards import card_record
+
+    trial, switch, rpc, _ = live_switch
+    saved = card_record(tmp_path, counts)
+    assert saved['totals']['word'] == word
     if issue == 'conflict':
         saved['route_conflicts'] = ['trial']
     elif issue == 'missing':
@@ -354,7 +359,10 @@ def test_blocked_saved_routes_offer_no_override_on_any_surface(live_switch, issu
     trial.store.save(saved)
     card = trial.verdict_view(saved)
     assert 'switch' not in {choice['value'] for choice in result_actions(card)}
-    assert copy(key) in render_verdict(card)
+    expected_note = copy(key) if word in {'better', 'holds_up'} else None
+    for cli in (False, True):
+        rendered = render_verdict(card, cli=cli)
+        assert (copy(key) in ' '.join(rendered.split())) == (expected_note is not None)
     for target in (saved['id'], saved['trial']['model']):
         for flag in ('', ' --anyway'):
             reply = switch.command('switch ' + target + flag)
@@ -365,7 +373,7 @@ def test_blocked_saved_routes_offer_no_override_on_any_surface(live_switch, issu
     verdict = rpc.page_state({'test_id': saved['id']})['verdict']
     assert not any(button['id'] in {'switch', 'switch_all', 'anyway'} for button in verdict['buttons'])
     assert verdict['quiet'] is None
-    assert verdict['note'] == copy(key)
+    assert verdict['note'] == expected_note
     for confirmed in (False, True):
         reply = rpc.methods()['act']({'action': 'anyway', 'test_id': saved['id'],
                                      'confirm_override': confirmed})
@@ -398,3 +406,24 @@ def test_override_time_is_local_and_readable_without_changing_saved_iso(live_swi
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+@pytest.mark.parametrize('reason,label', [
+    ('worse', 'the test favored your current model'),
+    ('too_close', 'the test did not establish a clear difference'),
+    ('no_passing_test', 'no passing test was available'),
+])
+def test_override_status_and_desktop_log_explain_the_reason(live_switch, reason, label):
+    _, switch, rpc, saved = live_switch
+    switch.command('switch ' + saved['id'] + ' --anyway')
+    with switch.engine.store.transaction() as holder:
+        holder[0].override['reason'] = reason
+        next(event for event in holder[0].history if event['kind'] == 'override')['reason'] = reason
+    status = switch.command('status', terminal=True)
+    assert f'Owner override ({label})' in status
+    assert f'({reason})' not in status
+    assert f'Owner override ({label})' in switch.panel()['status']
+    row = next(row for row in rpc.page_state({})['switch']['log']['rows'] if 'Owner override' in row['text'])
+    assert f'Owner override ({label})' in row['text']
+    assert f'({reason})' not in row['text']
+    assert switch.engine.store.read().override['reason'] == reason

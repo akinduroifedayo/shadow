@@ -6,6 +6,7 @@ from ..common.copy import copy
 from ..common.models import Model
 from ..common.controller_stop import controller_stop_text
 from .usage import stored_price
+from .judge import judge_error_text
 from .panel import panel_eligible
 from .verdict import half_up
 from .presentation import verdict_presentation, terminal_rate_bar, terminal_model_table
@@ -67,7 +68,8 @@ def render_start(record, *, cli=False, isolation_verified=False):
     current, trial = Model(**record['current']), Model(**record['trial'])
     command = 'hermes shadow' if cli else '/shadow'
     providers = ', '.join(dict.fromkeys(m['provider'] for m in [record['trial'], record['current'], *record['judge']['models']]))
-    fields = {'trying': trial.name, 'current': current.name, 'picked': record['picked'], 'total': record['total'], 'days': record['days']}
+    fields = {'trying': trial.name, 'current': current.name, 'picked': record['picked'], 'total': record['total'], 'days': record['days'],
+              'verb': 'compare' if record['intent'] == 'compare' else 'try'}
     lines = [copy('start.title', **fields), f'{trial.provider} / {trial.model}', '', copy('start.turns', **fields),
              copy('start.left_out', reasons=', '.join(f'{v} {copy("pick.reason." + k)}' for k,v in record['left_out'].items()) or '0'),
              judge_line(record, True)]
@@ -95,7 +97,7 @@ def render_start(record, *, cli=False, isolation_verified=False):
     if record['picked'] < 20:
         lines.append(copy('start.too_few', command=command, model=trial.model, **fields))
     elif prediction and prediction.get('total') is not None and prediction['total'] > record['cap']:
-        lines.append(copy('start.over_cap', estimate=prediction['total'], cap=record['cap'], minimum=prediction['total'] * 20 / record['picked'], higher=math.ceil(prediction['total']), command=command, model=trial.model))
+        lines.append(copy('start.over_cap', estimate=prediction['total'], cap=record['cap'], minimum=prediction['total'] * 20 / record['picked'], higher=math.ceil(prediction['total']), command=command, model=trial.model, verb=fields['verb']))
     if isolation_verified:
         lines.append(copy('start.wait', minutes=max(1, record['picked'])))
     else:
@@ -136,7 +138,8 @@ def receipt_columns(record):
 
 
 def _signed(value):
-    return f'{value:+d}%' if value else '0%'
+    from shadow.trial.verdict import format_signed_pct
+    return format_signed_pct(value)
 
 
 def p_text(p, alpha):
@@ -167,8 +170,15 @@ def switch_limit(record):
     return None
 
 
+def switch_notice(record):
+    if record['totals']['word'] in {'better', 'holds_up'}:
+        return switch_limit(record)
+    return None
+
+
 def render_verdict(record, *, cli=False, stats=False, interactive=False):
     data = record['totals']
+    level = '97.5' if data['second_look'] else '95'
     current, trial = Model(**record['current']), Model(**record['trial'])
     judge = Model(**record['judge']['models'][0])
     command = 'hermes shadow' if cli else '/shadow'
@@ -184,7 +194,13 @@ def render_verdict(record, *, cli=False, stats=False, interactive=False):
     lines = [view['headline']]
     if view['bar']:
         lines += [terminal_rate_bar(view['bar']), view['bar']['label']]
-    lines += [terminal_model_table(view['table']), '[' + view['advice'] + ']', copy('verdict.reason.' + reason, **fields)]
+    lines += [terminal_model_table(view['table']), '[' + view['advice'] + ']']
+    if view['advice_hint']:
+        lines.append(view['advice_hint'])
+    reason_group = 'verdict.reason.compare.' if record['intent'] == 'compare' and data['word'] != 'not_enough' else 'verdict.reason.'
+    lines.append(copy(reason_group + reason, **fields))
+    if error := judge_error_text(record):
+        lines.append(error)
     if note := controller_stop_text(record, copy):
         lines.append(note)
     if record.get('stop_reason') == 'unpriceable':
@@ -226,10 +242,10 @@ def render_verdict(record, *, cli=False, stats=False, interactive=False):
     estimate = (record.get('estimate') or {}).get('total')
     if data['word'] == 'too_close' and not data['second_look'] and estimate is not None:
         lines.append(copy('trial.more_cost', cost=estimate))
-    limit = switch_limit(record)
-    if limit:
-        lines.append(copy(limit))
-    elif data['word'] in {'better', 'holds_up'} and current.provider != trial.provider:
+    notice = switch_notice(record)
+    if notice:
+        lines.append(copy(notice))
+    elif record['intent'] == 'switch' and data['word'] in {'better', 'holds_up'} and current.provider != trial.provider:
         lines.append(copy('trial.switch_watch', trying=trial.name, provider=trial.provider))
     lines.append(copy('hint.stats', command=command, id=record['id']))
     if stats:
@@ -242,7 +258,7 @@ def render_verdict(record, *, cli=False, stats=False, interactive=False):
             where = receipt['where_' + outcome]
             if where['kind']:
                 rows.append(('maths.where_' + outcome, copy('maths.reason_count', reason=copy('reason.' + where['kind']), count=where['count'], total=data[outcome])))
-        lines.extend(f'{copy(label):22} {value}' for label,value in rows)
+        lines.extend(f'{copy(label, level=level):22} {value}' for label,value in rows)
         if record.get('judge_mode') == 'backup_both' and isinstance(record.get('judge_disagreements'), dict):
             panel = record['judge_disagreements']
             if data.get('win_rate') is not None:
@@ -259,7 +275,7 @@ def render_verdict(record, *, cli=False, stats=False, interactive=False):
         lines.append(' '.join(f'[{c["label"]}]' for c in result_actions(record)))
     output = []
     for line in lines:
-        output.append(textwrap.fill(line, 72) if cli and line and '\n' not in line and line not in {view['headline'], terminal_model_table(view['table']), groups[0], _wrap_groups(groups)} and not any(line.startswith(copy(k)) for k in ('maths.net','maths.ci','maths.sign','maths.holds','maths.agree','maths.fixes')) else line)
+        output.append(textwrap.fill(line, 72) if cli and line and '\n' not in line and line not in {view['headline'], terminal_model_table(view['table']), groups[0], _wrap_groups(groups)} and not any(line.startswith(copy(k, level=level)) for k in ('maths.net','maths.ci','maths.sign','maths.holds','maths.agree','maths.fixes')) else line)
     return '\n'.join(output)
 
 
@@ -286,6 +302,8 @@ def result_actions(record):
     else:
         choices['turns'] = copy('button.turns', count=data['pairs'])
         order = (more if data['cant_call_reason'] in {'cap', 'rate_limited', 'panel_uncertain'} else []) + ['turns', 'keep']
+    if record['intent'] == 'compare':
+        order = [name for name in order if name != 'switch']
     if 'switch' not in order:
         order.append('switch')
     return [{'value': name, 'label': choices[name]} for name in order if name != 'switch' or not switch_limit(record)]

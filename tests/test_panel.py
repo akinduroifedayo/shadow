@@ -41,7 +41,7 @@ def test_swap_eligibility_is_per_judge_and_configurable(tmp_path, threshold, eli
         assert record['totals']['word'] == 'not_enough'
         assert record['totals']['cant_call_reason'] == 'judge_ineligible'
         assert 'often enough to trust' in render_verdict(record)
-        assert 'no judge to trust' in render_verdict(record)
+        assert 'No eligible judge panel could confirm these counts.' in render_verdict(record)
 
 
 def test_run_30_more_stays_when_the_interval_includes_half_and_not_when_no_judge_is_trustworthy(tmp_path):

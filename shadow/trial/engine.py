@@ -17,7 +17,7 @@ try:
     from tools.registry import registry as _tool_registry
 except ImportError:
     _tool_registry = None
-from .judge import Judge, JudgeChoice, choose_judge
+from .judge import Judge, JudgeChoice, JudgeRequestError, choose_judge
 from .picking import FOLLOW_UP, Turn
 from .tiers import normal_service_tiers, prices_for_tiers
 from .usage import Usage, UsageLedger, cost_usage, parse_usage, resolve_prices, stored_price
@@ -129,7 +129,9 @@ class TrialEngine:
         self.steps = 0
         self.wake = threading.Event()
 
-    def prepare(self, selection, current, trial, catalog, *, cap=5, days=7, judge=None, origin=None, web_lookups=True, run_id=None, previous=None, service_tiers=()):
+    def prepare(self, selection, current, trial, catalog, *, cap=5, days=7, judge=None, origin=None, web_lookups=True, run_id=None, previous=None, service_tiers=(), intent='switch'):
+        if intent not in {'switch', 'compare'}:
+            raise ValueError('invalid trial intent')
         if not math.isfinite(cap) or cap <= 0:
             raise ValueError('invalid budget')
         threshold = self.ctx.get_config('judge_swap_consistency_min', 70)
@@ -144,6 +146,7 @@ class TrialEngine:
         choice = replace(choice, models=tuple(with_billing(model) for model in choice.models))
         prediction = estimate(selection, current, trial, choice, prices=prices)
         record = {'id': run_id or uuid.uuid4().hex[:8], 'created_at': time.time(), 'origin': Scrubber().scrub(origin or {}),
+                  'intent': previous['intent'] if previous else intent,
                   'current': asdict(current), 'trial': asdict(trial), 'judge': choice.record(), 'judge_mode': choice.mode,
                   'judge_source': choice.source, 'judge_disagreements': 0, 'seed': selection.seed, 'days': days,
                   'judge_policy': deepcopy(previous['judge_policy']) if previous and previous.get('judge_policy') else {
@@ -151,6 +154,7 @@ class TrialEngine:
                   'total': selection.total, 'qualified': selection.qualified, 'picked': len(selection.turns),
                   'left_out': selection.left_out, 'scrub_counts': selection.scrub_counts, 'cap': cap, 'spend': 0.0,
                   'estimate': prediction, 'prices': prices,
+                  'service_tiers': list(service_tiers),
                   'pricing_blocker': None if normal_service_tiers(service_tiers) else 'service_tier',
                   'price_date': '2026-11-10', 'web_lookups': web_lookups,
                   'state': 'prepared', 'stop_reason': None, 'excess_inflight': 0.0, 'reruns': 0, 'varied': 0,
@@ -499,9 +503,11 @@ class TrialEngine:
                     if self.cancel_requested():
                         return self._stop_locked('cancelled', 'cancelled')
                     return self._finish()
-                except (ValueError, TypeError, KeyError):
+                except (ValueError, TypeError, KeyError) as exc:
                     turn['state'] = 'unusable'
                     turn['unusable_reason'] = 'judge_unusable'
+                    if isinstance(exc, JudgeRequestError):
+                        turn['judge_error'] = str(exc)
                     judge_calls = [c for c in self.record['usage_calls'] if c['kind'] == 'judge']
                     if len(judge_calls) >= 2 and all(c.get('error') == 'request_failed' for c in judge_calls):
                         # The judge has never answered, after two tries; more replays would only spend on turns nobody can judge.

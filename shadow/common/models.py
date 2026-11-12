@@ -1,3 +1,4 @@
+import math
 import re
 from dataclasses import asdict, dataclass, replace
 from decimal import Decimal, DecimalException
@@ -87,10 +88,11 @@ class Price:
     tier_threshold_tokens: int | None = None
     above: tuple[Decimal, ...] | None = None
     plan: bool = False
+    request_cost: Decimal = Decimal(0)
 
     def record(self):
         value = asdict(self)
-        for key in ('input', 'output', 'cache_read', 'cache_write'):
+        for key in ('input', 'output', 'cache_read', 'cache_write', 'request_cost'):
             if value[key] is not None:
                 value[key] = str(value[key])
         if self.above is not None:
@@ -100,7 +102,8 @@ class Price:
     @classmethod
     def from_record(cls, value):
         fields = dict(value)
-        for key in ('input', 'output', 'cache_read', 'cache_write'):
+        fields.setdefault('request_cost', '0')
+        for key in ('input', 'output', 'cache_read', 'cache_write', 'request_cost'):
             if fields[key] is not None:
                 fields[key] = Decimal(fields[key])
         if fields.get('above') is not None:
@@ -117,7 +120,7 @@ class Price:
                     return None
             else:
                 total += tokens * rate
-        return total / 1_000_000
+        return total / 1_000_000 + self.request_cost
 
 
 def _price(i, o, r, w, *, long_context=False, source=None):
@@ -151,7 +154,7 @@ _CONTEXT_TIERED_MODELS = frozenset({
 })
 
 
-def _openrouter_has_no_request_fee(model_id):
+def _openrouter_request_fee(model_id):
     try:
         from agent import model_metadata
         metadata = getattr(model_metadata, '_model_metadata_cache', {})
@@ -160,13 +163,13 @@ def _openrouter_has_no_request_fee(model_id):
         row = metadata.get(model_id) if isinstance(metadata, dict) else None
         pricing = row.get('pricing') if isinstance(row, dict) else None
         if not isinstance(pricing, dict):
-            return False
+            return None
         if 'request' not in pricing:
-            return True
+            return Decimal(0)
         fee = Decimal(str(pricing['request']))
-        return fee.is_finite() and fee == 0
+        return fee if fee.is_finite() and fee >= 0 and math.isfinite(fee) else None
     except Exception:
-        return False
+        return None
 
 
 def price_for(model):
@@ -187,12 +190,13 @@ def price_for(model):
         if any(rate is None or not rate.is_finite() or rate <= 0 for rate in rates):
             return None
         slug = canonical_slug(model.model.split(':', 1)[0])
+        fee = _openrouter_request_fee(model.model) if model.provider == 'openrouter' else None
         if (model.provider != 'openrouter'
                 or any(slug == base or slug.startswith(base + '-') for base in _CONTEXT_TIERED_MODELS)
-                or not _openrouter_has_no_request_fee(model.model)):
+                or fee is None):
             return None
         return Price(*rates, source='Hermes hermes_cli.models_pricing.get_pricing_for_provider',
-                     plan=subscription_included(model))
+                     plan=subscription_included(model), request_cost=fee)
     # Proxy markups and unknown context tiers need a separately verified price.
     if model.provider not in {'openai', 'openai-codex', 'anthropic'}:
         return None

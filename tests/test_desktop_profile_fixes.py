@@ -87,6 +87,41 @@ def test_real_profile_model_list_deduplicates_routes_and_excludes_current(profil
         (OUTSIDE.provider, f'{OUTSIDE.provider}::{OUTSIDE.model}')]
 
 
+@pytest.mark.parametrize('alias', ['openai/GPT-6.1-SOL', 'gpt-6.1-sol-2026-05-01', 'gpt-6.1-sol-20260501'])
+def test_model_picker_collapses_canonical_aliases_and_excludes_current(profile, alias):
+    source, _, _ = profile
+    source.trial.current = Model('openai-codex', 'gpt-6.1-sol')
+    source.trial.catalog = [source.trial.current, Model('openai-codex', alias),
+                            Model('openai', 'gpt-6.1-sol'), Model('openai', alias),
+                            Model('openai', 'gpt-6.1-terra'),
+                            Model('openai', 'openai/GPT-6.1-TERRA-2026-05-01')]
+
+    rows = DesktopRpc(source, COPY).start_models({})['models']
+
+    assert {row['slug'] for row in rows} == {'openai::gpt-6.1-sol', 'openai::gpt-6.1-terra'}
+    assert len(rows) == 2
+
+
+def test_model_picker_distinguishes_ids_with_the_same_short_name(profile):
+    source, _, _ = profile
+    source.trial.current = OUTSIDE
+    source.trial.catalog = [OUTSIDE, Model('openai-codex', 'gpt-6.1-sol'),
+                            Model('openai-codex', 'gpt-6.1-sol-latest'),
+                            Model('openai-codex', 'gpt-6.1-sol-latest'),
+                            Model('openai', 'gpt-6.1-sol')]
+
+    rows = DesktopRpc(source, COPY).start_models({})['models']
+
+    assert len(rows) == 3
+    assert {(row['name'], row['provider']) for row in rows} == {
+        ('gpt-6.1-sol', 'openai-codex'),
+        ('gpt-6.1-sol-latest', 'openai-codex'),
+        ('gpt-6.1-sol', 'openai')}
+    assert {row['slug'] for row in rows} == {
+        'openai-codex::gpt-6.1-sol', 'openai-codex::gpt-6.1-sol-latest',
+        'openai::gpt-6.1-sol'}
+
+
 @pytest.mark.parametrize('model', ['not-a-profile-model', CURRENT.model])
 def test_real_profile_start_rejects_unknown_or_current_model(profile, model):
     source, ctx, writes = profile
@@ -311,6 +346,7 @@ def test_confirmed_desktop_start_queues_and_launches_the_preview_once(startable_
     assert len(launcher.launches) == 1
     record = source.test(reply['page']['test_id'])
     assert record['state'] == 'queued'
+    assert record['intent'] == 'switch'
     assert record['controller_pid'] == 12345
     assert record['seed'] == chosen.seed
     assert [turn['id'] for turn in record['turns']] == [turn.id for turn in chosen.turns]
@@ -320,6 +356,22 @@ def test_confirmed_desktop_start_queues_and_launches_the_preview_once(startable_
     with pytest.raises(ValueError):
         rpc.act(confirm(card))
     assert len(source.tests()) == len(launcher.launches) == 1
+
+
+@pytest.mark.parametrize('boundary', ['rpc', 'source'])
+@pytest.mark.parametrize('params,intent', [({}, 'switch'), ({'intent': 'compare'}, 'compare')])
+def test_desktop_start_saves_selected_intent(startable_profile, boundary, params, intent):
+    source, rpc, launcher, ctx, _ = startable_profile
+    card = rpc.start_card({'model': TRIAL.model})
+    request = {**confirm(card), **params}
+    if boundary == 'rpc':
+        test_id = rpc.act(request)['page']['test_id']
+    else:
+        test_id = source.act('start', {k: v for k, v in request.items() if k != 'action'})['test_id']
+
+    assert source.test(test_id)['intent'] == intent
+    assert len(source.tests()) == len(launcher.launches) == 1
+    assert ctx.capture == []
 
 
 def test_confirmed_desktop_start_uses_the_rpc_copy_for_both_consent_checks(startable_profile):

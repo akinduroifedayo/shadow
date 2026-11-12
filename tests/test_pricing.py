@@ -274,7 +274,7 @@ def test_unknown_cache_rate_blocks_start(tmp_path, hermes_pricing, bucket, rate)
 
 
 @pytest.mark.parametrize('role', ['current', 'trial', 'judge'])
-@pytest.mark.parametrize('fee', ['0.01', '-1', 'invalid', 'NaN', 'Infinity', None, True])
+@pytest.mark.parametrize('fee', ['-1', 'invalid', 'NaN', 'Infinity', '1e999999999', None, True])
 def test_openrouter_request_fee_is_unknown_and_blocks_start(tmp_path, hermes_pricing, role, fee):
     models = {'current': CURRENT, 'trial': TRIAL, 'judge': OUTSIDE}
     models[role] = FLAT_MODELS[role]

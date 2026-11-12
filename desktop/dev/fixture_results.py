@@ -5,7 +5,23 @@ from statistics import median
 from decimal import Decimal, ROUND_HALF_UP
 
 
-def stats(won, same, lost, judge_agree, *, reruns=10, varied=2, stop_reason=None, second_look=False):
+
+
+def shown_pct(rate, *, upper, keep_off_zero=False):
+    whole = math.ceil(100 * rate) if upper else math.floor(100 * rate)
+    if not keep_off_zero or whole != 0 or rate == 0:
+        return whole
+    places = 1
+    while True:
+        scale = 10 ** (2 + places)
+        stepped = math.ceil(rate * scale) if upper else math.floor(rate * scale)
+        shown = stepped / (10 ** places)
+        if shown != 0 and (shown > 0) == (rate > 0):
+            return shown
+        places += 1
+
+
+def stats(won, same, lost, judge_agree, *, reruns=10, varied=2, stop_reason=None, second_look=False, judge_unreachable=False):
     n = won + same + lost
     wp, lp, n2 = won + .5, lost + .5, n + 2
     d = (lp - wp) / n2
@@ -13,25 +29,33 @@ def stats(won, same, lost, judge_agree, *, reruns=10, varied=2, stop_reason=None
     upper = d + (1.96 if second_look else 1.645) * se
     k, m = max(won, lost), won + lost
     p = min(1.0, 2 * sum(math.comb(m, i) for i in range(k, m + 1)) / 2 ** m) if m else 1.0
-    alpha = .025 if second_look else .05
+    z = 2.241 if second_look else 1.96
+    low, high = -d - z * se, -d + z * se
     reason = None
-    if n < 20:
-        word, reason = 'not_enough', stop_reason or 'few_usable'
+    if stop_reason == 'unpriceable':
+        word, reason = 'not_enough', 'unpriceable'
+    elif n < 20 and judge_unreachable and stop_reason not in {'cap', 'rate_limited'}:
+        word, reason = 'not_enough', 'judge_unreachable'
+    elif n < 20:
+        word, reason = 'not_enough', stop_reason if stop_reason in {'cap', 'rate_limited'} else 'few_usable'
     elif judge_agree / n < .7:
         word, reason = 'not_enough', 'judge_unsure'
     elif reruns >= 10 and varied >= 6:
         word, reason = 'not_enough', 'runs_varied'
-    elif p < alpha and won > lost:
+    elif low > 0:
         word = 'better'
-    elif p < alpha and lost > won:
+    elif high < 0:
         word = 'worse'
     elif upper <= .15:
         word = 'holds_up'
     else:
         word, reason = 'too_close', 'too_close'
+    off_zero = word in {'better', 'worse'}
     return {'word': word, 'cant_call_reason': reason, 'won': won, 'same': same, 'lost': lost, 'pairs': n, 'p': p, 'U': upper,
-            'net_pct': math.trunc(100 * (won - lost) / n), 'ci95_low': math.floor(100 * (-d - 1.96 * se)),
-            'ci95_high': math.ceil(100 * (-d + 1.96 * se)), 'ci_too_wide': n < 20, 'holds_low': math.floor(-100 * upper),
+            'net_pct': math.trunc(100 * (won - lost) / n) if n else 0,
+            'interval_low': low, 'interval_high': high,
+            'ci95_low': shown_pct(low, upper=False, keep_off_zero=off_zero),
+            'ci95_high': shown_pct(high, upper=True, keep_off_zero=off_zero), 'ci_too_wide': n < 20, 'holds_low': math.floor(-100 * upper),
             'worst_per_100': math.ceil(100 * upper), 'judge_agree': judge_agree, 'judge_pairs': n, 'reruns': reruns,
             'varied': varied, 'second_look': second_look,
             'lean': 'better' if won - lost >= 2 else 'worse' if lost - won >= 2 else 'neither'}

@@ -15,7 +15,8 @@ Methods (wire name ``plugin.shadow.<name>``, handler ``(params, *, session_id, *
 ``start.card``    ``{model, judge?}`` -> StartCard. ``judge`` is a slug from the card's judge list.
 ``settings.set``  ``{web_lookups: bool, test_id?}`` -> PageView.
 ``act``           Action parameters -> ``{page: PageView, notice: str | None, start_card?: StartCard}``.
-                  Start submits its card consent. Switch actions submit the panel identity.
+                  Start submits its card consent and ``intent`` (``switch`` by default or ``compare``).
+                  Switch actions submit the panel identity.
                   See desktop/RECORD_VIEWS.md. The page shows ``notice`` as a toast.
 
 Session event (``ctx.emit_to_session``): ``plugin.shadow.page.changed`` with ``{mode, test_id, switch_id}``.
@@ -214,7 +215,7 @@ def switch_view(raw: dict | None, test: dict | None) -> dict | None:
                 row.update(new=new['name'], provider=new['provider_name'],
                            old=old['name'], old_provider=old['provider_name'])
         elif kind == 'override':
-            row.update(kind='override', headline=public['headline'])
+            row.update(kind='override', headline=public['headline'], reason=public['reason'])
         elif kind == 'resume':
             row.update(kind='resume')
         elif kind in {'rollback', 'watch_trip'}:
@@ -317,8 +318,9 @@ def speed(value: float) -> str:
     return f'{whole // 60}m {whole % 60}s'
 
 
-def signed_pct(value: int) -> str:
-    return ('+' if value > 0 else MINUS if value < 0 else '') + f'{abs(value)}%'
+def signed_pct(value: int | float) -> str:
+    from .trial.verdict import format_signed_pct
+    return format_signed_pct(value, minus=MINUS)
 
 
 def thousands(value: int) -> str:
@@ -561,7 +563,8 @@ def _more(c: Copy, key: str, count: int) -> dict:
 
 def _verdict(c: Copy, test: dict) -> dict:
     from .trial.presentation import verdict_presentation
-    from .trial.cards import switch_limit
+    from .trial.cards import switch_limit, switch_notice
+    from .trial.judge import judge_error_text
 
     presentation = verdict_presentation(test, c)
     totals = test['totals']
@@ -576,24 +579,30 @@ def _verdict(c: Copy, test: dict) -> dict:
     cheaper_or_faster = cheaper or (
         receipt['speed_new_s'] is not None and receipt['speed_yours_s'] is not None
         and receipt['speed_new_s'] < receipt['speed_yours_s'])
+    reason_group = 'verdict.reason.compare.' if test['intent'] == 'compare' else 'verdict.reason.'
     if word == 'not_enough':
         reason = c(f'verdict.reason.{reason_code}', **_reason_fields(test))
     elif word == 'holds_up' and not cheaper_or_faster:
-        reason = c('verdict.reason.holds_neither', trying=trying, current=current)
+        reason = c(reason_group + 'holds_neither', trying=trying, current=current)
     else:
-        reason = c(f'verdict.reason.{word}', trying=trying, current=current)
+        reason = c(reason_group + word, trying=trying, current=current)
+    if error := judge_error_text(test, c):
+        reason += '\n' + error
     if note := controller_stop_text(test, c):
         reason += '\n' + note
     caption = c('receipt.caption', trying=trying, current=current)
     if readable == 'so_far':
         caption += c.table['receipt.so_far']
     elif readable == 'no':
-        caption += c('receipt.unreadable', reason=c(f'desktop.unreadable.{reason_code}'))
+        caption += c('receipt.unreadable', reason=c(f'counts.{reason_code}'))
     buttons, quiet, note = _verdict_buttons(c, test, word, reason_code, same_provider, cheaper_or_faster)
     limit = switch_limit(test)
     if limit:
         buttons = [button for button in buttons if button['id'] not in {'switch', 'switch_all'}]
-        quiet, note = None, c(limit)
+        quiet = None
+        notice = switch_notice(test)
+        if notice:
+            note = c(notice)
     return {**presentation, 'word': presentation['advice'], 'reason': reason,
             'second_look': (c('fine.panel_second' if test.get('judge_mode') == 'backup_both' else 'fine.second', pairs=totals['pairs'])
                             if totals.get('second_look') else None),
@@ -620,10 +629,12 @@ def _verdict_buttons(c: Copy, test: dict, word: str, reason: str | None, same_pr
     current = test['current']['name']
     keep = _button(c, 'keep', 'button.keep', current=current)
     switch = _button(c, 'switch', 'button.switch') if same_provider else _button(c, 'switch_all', 'button.switch_all')
-    note = None if same_provider else c('desktop.verdict.other_provider', trying=test['trial']['name'],
+    note = None if same_provider or test['intent'] == 'compare' else c('desktop.verdict.other_provider', trying=test['trial']['name'],
                                         provider=test['trial']['provider_name'])
     second = test['totals'].get('second_look', False)
     more = [] if second or panel_eligible(test) is False else [_button(c, 'run_more', 'button.more')]
+    if test['intent'] == 'compare' and word in {'better', 'holds_up'}:
+        return [keep, switch], None, None
     if word == 'better' or word == 'holds_up' and cheaper_or_faster:
         return [{**switch, 'primary': True}, keep], None, note
     if word == 'holds_up':
@@ -743,7 +754,7 @@ def _maths(c: Copy, test: dict) -> dict:
     agree_key = 'desktop.maths.agree_backup' if test['judge_mode'] == 'backup_both' else 'desktop.maths.agree_of'
     rows = [
         {'label': c('desktop.maths.net'), 'value': [b(signed_pct(t['net_pct'])), ' ', {'k': c('desktop.maths.net_of', won=t['won'], lost=t['lost'], pairs=t['pairs'])}], 'warn': None},
-        {'label': c('desktop.maths.ci'), 'value': [c('desktop.maths.ci_range', low=signed_pct(t['ci95_low']), high=signed_pct(t['ci95_high']))],
+        {'label': c('desktop.maths.ci', level='97.5' if t.get('second_look') else '95'), 'value': [c('desktop.maths.ci_range', low=signed_pct(t['ci95_low']), high=signed_pct(t['ci95_high']))],
          'warn': c('desktop.maths.too_wide') if few else None},
         {'label': c('desktop.maths.sign'), 'value': [c('desktop.maths.p', p=sign_p_text(c, t['p'], alpha)), ' ', {'k': c('desktop.maths.sign_of', won=t['won'], lost=t['lost'], same=t['same'])}],
          'warn': c('desktop.maths.not_used') if few else None},
@@ -964,6 +975,8 @@ def _log(c: Copy, switch: dict) -> dict:
             fields['share'] = c(SHARES[fields['share']])
         if 'word' in fields:
             fields['word'] = c(f'verdict.{fields["word"]}')
+        if event['kind'] == 'override':
+            fields['reason'] = c(f'switch.override.reason.{fields["reason"]}')
         text = c(f'desktop.log.{event["kind"]}', **fields)
         if manual:
             text = f'{text} · {c("desktop.log.manual")}'
@@ -1126,15 +1139,16 @@ def build_start(c: Copy, source: Source, model: str, judge: str | None = None, *
     if not facts.get('isolation_verified', False):
         blocked = c('trial.isolation_required')
     elif facts['picked'] < 20:
-        blocked = c('start.too_few', picked=facts['picked'], days=facts['days'], command='/shadow', model=model)
+        blocked = c('start.too_few', picked=facts['picked'], days=facts['days'], command='/shadow', model=model, verb='try')
     elif unpriced:
         missing = _unpriced_names(trying, current, *judging['models'], facts=facts) or trying.get('name') or model
         blocked = _pricing_notice(c, facts) if facts.get('pricing_blocker') == 'service_tier' else c('start.no_price', model=missing)
     elif estimate > facts['cap']:
         blocked = c('start.over_cap', estimate=estimate, cap=facts['cap'],
                     minimum=facts.get('minimum', estimate * 20 / facts['picked']),
-                    command='/shadow', model=model, higher=math.ceil(estimate))
-    buttons = ([] if blocked else [_button(c, 'start', 'button.start', primary=True)]) + [
+                    command='/shadow', model=model, higher=math.ceil(estimate), verb='try')
+    buttons = ([] if blocked else [_button(c, 'start', 'button.start', primary=True),
+                                   _button(c, 'compare', 'desktop.start.compare')]) + [
         _button(c, 'see', 'desktop.start.see', picked=facts['picked']), _button(c, 'cancel', 'button.cancel')]
     card = {'title': c('start.title', trying=trying['name'], current=current['name']), 'id_line': f'{trying["provider"]} / {trying["model"]}',
             'model': model, 'judge_slug': chosen['model'] if user else None, 'rows': rows,
@@ -1175,6 +1189,9 @@ class DesktopRpc:
                     failure['code'] = error.code
                 return {'error': failure}
             except ValueError as error:
+                from .switch.decision import SwitchBlocked
+                if isinstance(error, SwitchBlocked):
+                    return {'error': {'message': self.c(error.key, **error.fields)}}
                 message = str(error)
                 user_copy = message in self.c.table.values() or message.startswith(('The judge', 'No model called', 'Shadow needs'))
                 return {'error': {'message': message if user_copy else self.c('trial.invalid')}}
@@ -1235,6 +1252,11 @@ class DesktopRpc:
                         'notice': None, 'start_card': card}
         if action in {'switch', 'switch_all', 'anyway'}:
             test = self.source.test(params['test_id']) if params.get('test_id') else None
+            switch = getattr(self.source, 'switch', None)
+            if switch is not None:
+                switch.engine.reconcile_config(force=True)
+                if test:
+                    switch.require_target_change(test['trial'])
             if test and test.get('totals'):
                 from .trial.cards import switch_limit
                 limit = switch_limit(test)
@@ -1247,6 +1269,9 @@ class DesktopRpc:
                                              'confirm': self.c('switch.override.confirm'), 'cancel': self.c('switch.override.cancel')}}
         arguments = {k: v for k, v in params.items() if k != 'action'}
         if action == 'start':
+            arguments['intent'] = _text(params.get('intent')) or 'switch'
+            if arguments['intent'] not in {'switch', 'compare'}:
+                raise ValueError('invalid trial intent')
             arguments['origin'] = {'session_id': session_id, 'platform': 'desktop'}
             arguments['_copy_table'] = self.c.table
         result = self.source.act(action, arguments)
@@ -1300,6 +1325,8 @@ class FixtureSource:
     def __init__(self, scenario: str | Path, *, finalize_fixture: Callable[[dict], dict] | None = None):
         path = Path(scenario) if str(scenario).endswith('.json') else FIXTURES / f'{scenario}.json'
         self.world = json.loads(path.read_text())
+        from .common.storage import parse_trial_record
+        self.world['tests'] = [parse_trial_record(record) for record in self.world['tests']]
         self.finalize_fixture = finalize_fixture
 
     def tests(self) -> list[dict]:
@@ -1365,6 +1392,9 @@ class FixtureSource:
         notices = self.world.get('notices', {})
         check_action_identity(self, action, params)
         if action == 'start':
+            intent = params.get('intent', 'switch')
+            if intent not in {'switch', 'compare'}:
+                raise ValueError('invalid trial intent')
             facts = self.start_facts(params.get('model'))
             if facts is None:
                 raise ValueError('no such model')
@@ -1379,7 +1409,7 @@ class FixtureSource:
             if self.active_switch() or any(t['state'] in ACTIVE_TRIAL_STATES for t in self.tests()):
                 raise ValueError('a test or switch is already running')
             test_id = next(f'fixture-{i}' for i in range(1, len(self.tests()) + 2) if self.test(f'fixture-{i}') is None)
-            test = {**facts, 'id': test_id, 'created_at': datetime.now().isoformat(),
+            test = {**facts, 'intent': intent, 'id': test_id, 'created_at': datetime.now().isoformat(),
                     'judge': {'mode': judging['mode'], 'models': judging['models']},
                     'judge_mode': judging['mode'], 'judge_source': judging['source'], 'judge_disagreements': 0,
                     'state': 'running', 'spend': 0.0, 'turns': [], 'totals': None}

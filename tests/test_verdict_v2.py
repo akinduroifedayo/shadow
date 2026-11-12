@@ -1,12 +1,12 @@
 import pytest
 
 from shadow.trial.cards import render_verdict
-from shadow.trial.presentation import ADVICE_KEYS, verdict_presentation
+from shadow.trial.presentation import verdict_presentation
 from test_cards import card_record
 
 
 @pytest.mark.parametrize('word,tag', [
-    ('better', 'Switch-worthy'), ('worse', 'Keep your current model'),
+    ('better', 'Safe to switch'), ('worse', 'Stay on your current model'),
     ('holds_up', 'Safe to switch'), ('too_close', 'Too close to call'),
     ('not_enough', 'Too close to call'),
 ])
@@ -14,7 +14,6 @@ def test_every_verdict_has_a_small_advice_tag(tmp_path, word, tag):
     record = card_record(tmp_path)
     record['totals']['word'] = word
     assert verdict_presentation(record)['advice'] == tag
-    assert set(ADVICE_KEYS) == {'better', 'worse', 'holds_up', 'too_close', 'not_enough'}
 
 
 def test_numbers_lead_and_interval_bar_fits_terminal(tmp_path):

@@ -131,7 +131,7 @@ def holds_up(tid='b71c', created='2026-11-10T16:12:00', **extra):
 
 
 VARIANTS = {
-    'better': lambda: test('a3f2', '2026-11-10T16:12:00', 15, 11, 4, agree=27, rec=receipt(
+    'better': lambda: test('a3f2', '2026-11-10T16:12:00', 15, 11, 4, agree=27, intent='switch', rec=receipt(
         30, cost=(0.014, 0.036), speed=(8.6, 13.9), steps=(3.2, 3.8), broken=(0, 1), fixes=(3, 6),
         where_won=('missed_request', 6), where_lost=('tool_details', 3))),
     'worse': lambda: test('c09e', '2026-11-10T16:12:00', 3, 9, 18, agree=28, spend=1.79, rec=receipt(
@@ -224,6 +224,7 @@ SCENARIOS = {
     'progress': world([progress_test()]),
     'result': world([holds_up(), VARIANTS['worse']() | {'id': 'c09e', 'created_at': '2026-11-08T11:02:00'}]),
     **{f'result-{name}': world([make()]) for name, make in VARIANTS.items()},
+    'result-compare': world([deepcopy(VARIANTS['better']()) | {'intent': 'compare'}]),
     'switch': world([holds_up()], gradual()),
     'switch-paused': world([holds_up()], gradual('paused')),
     'watch': world([], watch()),
