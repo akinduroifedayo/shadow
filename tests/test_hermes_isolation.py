@@ -48,9 +48,16 @@ def test_completion_supports_messages_route_overrides_and_task_identity():
     ('hermes_cli/inventory.py', {'ConfigContext'}),
     ('hermes_cli/auth.py', {'get_auth_status'}),
     ('hermes_cli/local_runtime/bootstrap.py', {'staged_model_ids'}),
+    ('hermes_cli/plugin_capabilities.py', {'plugin_capability_granted'}),
+    ('hermes_cli/plugins_manifest.py', {'running_hermes_version', 'version_satisfies'}),
+    ('hermes_cli/version_info.py', {'get_version_info'}),
+    ('hermes_cli/plugins.py', {'get_plugin_manager'}),
+    ('hermes_cli/plugins_discovery.py', {'collect_directory_manifests'}),
     ('hermes_cli/providers.py', {'LLAMACPP_ALIASES', 'LLAMACPP_PROVIDER_ID',
-                                 'custom_provider_aliases', 'custom_provider_slug'}),
-    ('providers/__init__.py', {'bound_profile_resolver'}),
+                                 'custom_provider_aliases', 'custom_provider_slug',
+                                 'get_provider', 'resolve_user_provider', 'resolve_custom_provider',
+                                 'TRANSPORT_TO_API_MODE', 'host_mandated_api_mode'}),
+    ('providers/__init__.py', {'bound_profile_resolver', 'bound_registry_key'}),
     ('agent/auxiliary_hooks.py', {'start_aux_call_hooks', 'finish_aux_call_hooks'}),
     ('agent/models_dev.py', {'PROVIDER_TO_MODELS_DEV', 'fetch_models_dev', 'get_model_capabilities'}),
     ('agent/secret_scope.py', {'current_secret_scope', 'serves_routed_profile'}),
@@ -60,10 +67,31 @@ def test_completion_supports_messages_route_overrides_and_task_identity():
     ('plugins/plugin_storage.py', {'plugin_data_dir', 'plugin_db'}),
     ('gateway/session_context.py', {'get_session_env'}),
     ('toolsets.py', {'resolve_toolset'}),
+    ('tools/registry.py', {'registry'}),
 ])
 def test_public_profile_readers_and_hook_builders_exist(path, names):
     assert all(not name.startswith('_') for name in names)
     assert names <= definitions(require_hermes_reference() / path).keys()
+
+
+@pytest.mark.parametrize('path,name,fields', [
+    ('agent/usage_pricing.py', 'PricingEntry', {'request_cost'}),
+    ('providers/base.py', 'ProviderProfile',
+     {'name', 'aliases', 'models_dev_id', 'auth_type', 'env_vars'}),
+])
+def test_public_provider_and_pricing_fields_exist(path, name, fields):
+    definition = definitions(require_hermes_reference() / path)[name]
+    declared = {node.target.id for node in definition.body
+                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)}
+    assert fields <= declared
+
+
+def test_plugin_registration_exposes_active_property():
+    definition = definitions(require_hermes_reference() / 'hermes_cli/plugins_ledger.py')['PluginRegistration']
+    methods = {node.name: node for node in definition.body if isinstance(node, ast.FunctionDef)}
+    assert 'active' in methods
+    assert any(isinstance(decorator, ast.Name) and decorator.id == 'property'
+               for decorator in methods['active'].decorator_list)
 
 
 def test_auxiliary_hooks_receive_the_bare_registered_task_key():
