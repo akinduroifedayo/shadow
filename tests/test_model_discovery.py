@@ -65,6 +65,7 @@ def hermes_profile(monkeypatch):
         for name in profile.env_vars:
             monkeypatch.delenv(name, raising=False)
     providers.bound_profile_resolver = lambda: lambda name: (None, profiles.get(name))
+    providers.bound_registry_key = lambda: ('fixture', 0)
     monkeypatch.setenv('SHADOW_TEST_ROUTER_KEY', 'fixture-value')
     for name, module in [('providers', providers), ('hermes_cli.inventory', inventory), ('hermes_cli.auth', auth),
                          ('hermes_cli.runtime_provider', runtime),
@@ -83,6 +84,7 @@ def test_discovery_uses_bound_resolver_without_discovery_or_miss_rescan(hermes_p
     hermes_profile.providers.get_provider_profile = forbidden
     hermes_profile.providers.list_providers = forbidden
     calls = []
+    hermes_profile.providers.bound_registry_key = lambda: calls.append('initialize')
     def bound():
         calls.append('bound')
         def resolve(name):
@@ -91,7 +93,7 @@ def test_discovery_uses_bound_resolver_without_discovery_or_miss_rescan(hermes_p
         return resolve
     hermes_profile.providers.bound_profile_resolver = bound
     assert len(discover_models().candidates) == 2
-    assert calls == ['bound', 'openrouter', 'deepseek']
+    assert calls == ['initialize', 'bound', 'openrouter', 'deepseek']
 
 
 def test_gemini_key_without_explicit_key_env_is_reachable(hermes_profile, monkeypatch):

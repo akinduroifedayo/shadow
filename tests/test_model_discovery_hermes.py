@@ -11,6 +11,43 @@ import pytest
 HERMES_SOURCE = os.environ.get('SHADOW_HERMES_SOURCE')
 
 
+def test_real_hermes_discovers_gemini_before_any_provider_lookup(tmp_path):
+    from test_real_tools import require_hermes_reference
+
+    source = require_hermes_reference().resolve()
+    profile = tmp_path / 'profile'
+    profile.mkdir()
+    (profile / 'config.yaml').write_text('model:\n  provider: gemini\n  default: gemini-test\n')
+    script = textwrap.dedent('''\
+        import sys
+        import requests
+        from hermes_cli.config import read_raw_config_readonly
+        read_raw_config_readonly()
+
+        class ForbiddenDiscoveryEffect(BaseException):
+            pass
+
+        def audit(event, args):
+            if event.startswith('socket.'):
+                raise ForbiddenDiscoveryEffect('provider initialization used a socket')
+        sys.addaudithook(audit)
+        from shadow.common.discovery import discover_models
+        from shadow.common.models import Model
+
+        catalog = discover_models()
+        assert catalog.failure is None, catalog.failure
+        assert catalog.require('gemini', 'gemini-test') == Model('gemini', 'gemini-test')
+        ''')
+    repo = Path(__file__).resolve().parents[1]
+    interpreter = os.environ.get('SHADOW_HERMES_PYTHON', sys.executable)
+    result = subprocess.run([interpreter, '-c', script], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=30,
+                            env={'PATH': '/usr/bin:/bin', 'HOME': str(tmp_path), 'HERMES_HOME': str(profile),
+                                 'PYTHONPATH': ':'.join([str(repo), str(source)]),
+                                 'PYTHONDONTWRITEBYTECODE': '1', 'GEMINI_API_KEY': 'fixture-value'})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize('warm_cache', [False, True])
 @pytest.mark.parametrize('initialized, registered', [(False, False), (True, False), (True, True)])
 def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, registered):

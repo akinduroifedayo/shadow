@@ -172,9 +172,10 @@ def discover_models(*, live_providers=frozenset()):
         from hermes_cli.providers import (LLAMACPP_ALIASES, LLAMACPP_PROVIDER_ID,
                                           custom_provider_aliases, custom_provider_slug)
 
-        from providers import bound_profile_resolver
+        from providers import bound_profile_resolver, bound_registry_key
 
         context = _local_context()
+        bound_registry_key()
         resolve_profile = bound_profile_resolver()
         current = Model(context.current_provider, context.current_model)
         metadata = fetch_models_dev(allow_network=False)
