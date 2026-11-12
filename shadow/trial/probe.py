@@ -65,6 +65,8 @@ def failure_text(checks):
             lines.append(DETAIL[name])
     if checks.get('model') is False:
         lines.append(DETAIL['model'])
+    if checks.get('reason_code') == 'gateway_restart_needed':
+        lines.append(copy('doctor.verify_gateway_restart', command=checks.get('restart_command', 'hermes gateway restart')))
     if checks.get('reason_code'):
         lines.append(copy('doctor.verify_failure_reason', reason=checks['reason_code']))
     return '\n'.join(lines)
@@ -566,10 +568,6 @@ def launch_setup(launcher, job, *, timeout=120, pause=time.sleep, killer=None):
     directory = launcher.directory
     directory.mkdir(parents=True, exist_ok=True)
     record_path(directory).unlink(missing_ok=True)
-    from .probe_gateway import refresh_setup_gateway
-    refresh_failure = refresh_setup_gateway(job['home'])
-    if refresh_failure:
-        return {'passed': False, 'incomplete': True, 'reason_code': refresh_failure}
     identity = launcher.identity
     prompt = directory / f'setup-{job["id"]}.txt'
     cleanup = []
@@ -606,7 +604,10 @@ def launch_setup(launcher, job, *, timeout=120, pause=time.sleep, killer=None):
                 return {'passed': False, 'unchanged': False, 'timed_out': True}
             return {'passed': False, 'unchanged': False}
         if not isinstance(result, dict) or result.get('passed') is not True:
-            return result or {'passed': False, 'timed_out': True}
+            if result is not None:
+                return result
+            from .probe_gateway import missing_setup_result
+            return missing_setup_result(job['home'], job['profile'])
         if (not all(result.get(name) is True for name in (*CHECK_NAMES, 'model'))
                 or len(owned) < 2 or set(result.get('sessions', ())) != set(owned)
                 or identity.profile != job['profile'] or launcher.identity != identity):

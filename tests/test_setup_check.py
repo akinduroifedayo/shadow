@@ -81,7 +81,6 @@ def _plugin(tmp_path):
 def active_home(tmp_path, monkeypatch, hermes_dispatch):
     from hermes_cli import config
     monkeypatch.setattr(config, 'load_config_readonly', lambda: {})
-    monkeypatch.setattr('shadow.trial.probe_gateway.refresh_setup_gateway', lambda home: None)
     monkeypatch.setattr(sys.modules[__name__], '_active_dispatch', hermes_dispatch)
     monkeypatch.setitem(sys.modules, 'hermes_constants', SimpleNamespace(get_hermes_home=lambda: tmp_path / 'home'))
 
@@ -451,20 +450,20 @@ def test_result_round_trip_preserves_unknown_and_observed_checks(tmp_path):
 
 
 @pytest.mark.parametrize('terminal', [False, True])
-def test_setup_confirmation_discloses_reload_and_prints_failure_reason(tmp_path, capsys, terminal):
+def test_setup_confirmation_describes_check_and_prints_restart_hint(tmp_path, capsys, terminal):
     from shadow.common.models import Model
 
     ctx, plugin = _plugin(tmp_path)
     plugin.current = Model('openai-codex', 'gpt-6.1-sol')
     plugin.catalog = [plugin.current]
     plugin.setup_launch = lambda *args: {'passed': False, 'incomplete': True,
-                                        'reason_code': 'gateway_refresh_refused'}
+                                        'reason_code': 'gateway_restart_needed',
+                                        'restart_command': 'hermes -p demo gateway restart'}
     text = plugin.verify_isolation(terminal=terminal, yes=True)
     shown = text + capsys.readouterr().out
-    assert "running gateway's plugins" in shown
-    assert 'reload' in shown
-    assert 'already running inside' in shown
-    assert 'Setup check reason: gateway_refresh_refused.' in text
+    assert 'isolate a replay' in shown
+    assert 'hermes -p demo gateway restart' in text
+    assert 'Setup check reason: gateway_restart_needed.' in text
     assert 'could not complete' in text
 
 
