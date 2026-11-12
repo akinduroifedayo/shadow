@@ -112,14 +112,16 @@ def _declared_models(value):
     return names
 
 
-def _credential_reason(provider, config, metadata, environment_names):
+def _credential_reason(provider, config, profile, metadata, environment_names):
     env_names = [config.get('key_env'), config.get('api_key_env')]
     raw_key = config.get('api_key')
     if isinstance(raw_key, str):
         reference = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', raw_key)
         if reference:
             env_names.append(reference[1])
-    if metadata is not None:
+    if profile is not None and profile.auth_type == 'api_key':
+        env_names.extend(profile.env_vars)
+    if metadata is not None and profile is None:
         env_names.extend(name for name in metadata.get('env') or []
                          if isinstance(name, str) and name.endswith(('_KEY', '_TOKEN')))
     if any(isinstance(name, str) and not name.endswith(('_URL', '_BASE_URL'))
@@ -167,7 +169,10 @@ def discover_models(*, live_providers=frozenset()):
         from hermes_cli.providers import (LLAMACPP_ALIASES, LLAMACPP_PROVIDER_ID,
                                           custom_provider_aliases, custom_provider_slug)
 
+        from providers import bound_profile_resolver
+
         context = _local_context()
+        resolve_profile = bound_profile_resolver()
         current = Model(context.current_provider, context.current_model)
         metadata = fetch_models_dev(allow_network=False)
         scope = current_secret_scope()
@@ -197,25 +202,30 @@ def discover_models(*, live_providers=frozenset()):
         for provider, config in configs.items():
             if not isinstance(config, dict) or config.get('enabled') is False or provider in excluded:
                 continue
+            home, shared = resolve_profile(provider)
+            profile = home or shared
+            canonical = profile.name if profile is not None else provider
             provider_aliases = custom_provider_aliases(config.get('name', provider), provider)
+            if profile is not None:
+                provider_aliases = set(provider_aliases) | set(profile.aliases)
             aliases.update({alias: provider for alias in provider_aliases})
             if current.provider == provider or current.provider in provider_aliases:
                 current = Model(provider, current.model)
-            metadata_id = PROVIDER_TO_MODELS_DEV.get(provider, provider)
+            metadata_id = (profile.models_dev_id if profile is not None else '') or PROVIDER_TO_MODELS_DEV.get(canonical, canonical)
             cached = metadata.get(metadata_id) or {}
             names = (_declared_models(config.get('model') or config.get('default_model'))
                      + _declared_models(config.get('models')))
-            if provider in PROVIDER_TO_MODELS_DEV:
+            if profile is not None or provider in PROVIDER_TO_MODELS_DEV:
                 names += _declared_models(cached.get('models'))
             if current.provider == provider and current.model:
                 names = [current.model, *names]
             credential_metadata = cached if metadata_id == provider else None
-            observed = live_providers.intersection({provider, *provider_aliases})
-            reason = None if observed else _credential_reason(provider, config, credential_metadata, environment_names)
+            observed = live_providers.intersection({provider, canonical, *provider_aliases})
+            reason = None if observed else _credential_reason(canonical, config, profile, credential_metadata, environment_names)
             for name in names:
                 identity = provider, name
                 models[identity] = Model(
-                    provider, name, plan=subscription_included(Model(provider, name)), reachable=reason is None)
+                    provider, name, plan=subscription_included(Model(canonical, name)), reachable=reason is None)
                 if reason:
                     reasons[identity] = reason
         if LLAMACPP_PROVIDER_ID not in excluded:
