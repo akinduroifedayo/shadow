@@ -4,9 +4,15 @@ from .domain import Proposal, Route
 
 
 class SwitchBlocked(ValueError):
-    def __init__(self, key):
+    def __init__(self, key, **fields):
         self.key = key
-        super().__init__(copy(key))
+        self.fields = fields
+        super().__init__(copy(key, **fields))
+
+
+def require_model_change(old, new):
+    if (old.provider, old.model) == (new.provider, new.model):
+        raise SwitchBlocked('switch.already_active', model=short_name(new.model))
 
 
 def switch_warning(proposal):
@@ -19,6 +25,7 @@ def switch_warning(proposal):
 def untested_proposal(catalog, config, target):
     new = catalog.resolve(target)
     old = catalog.require(catalog.current.provider, catalog.current.model)
+    require_model_change(old, new)
 
     def route(model):
         providers = config.get('providers', {})

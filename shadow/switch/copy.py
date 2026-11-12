@@ -101,5 +101,6 @@ def status(record):
         when = datetime.fromisoformat(record.override['at']).astimezone()
         hour = when.hour % 12 or 12
         label = f'{when:%b} {when.day}, {hour}:{when:%M} {"AM" if when.hour < 12 else "PM"}'
-        text += '\n' + copy('switch.override.status', **{**record.override, 'at': label})
+        reason = copy(f'switch.override.reason.{record.override["reason"]}')
+        text += '\n' + copy('switch.override.status', **{**record.override, 'at': label, 'reason': reason})
     return text

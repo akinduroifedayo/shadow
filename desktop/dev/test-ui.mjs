@@ -66,8 +66,31 @@ const action = (tree, id) => find(tree, node => node.props.b?.id === id || node.
 const tick = () => new Promise(resolve => setImmediate(resolve))
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 const top = { title: 'Shadow', sub: [], web: { on: true }, try: { disabled: false }, picker: { current: 'history', options: [] } }
-const card = { model: 'new-model', judge_slug: 'judge', title: 'Try', rows: [], judge: {}, buttons: [{ id: 'start', label: 'Start' }] }
+const card = { model: 'new-model', judge_slug: 'judge', title: 'Try', rows: [], judge: {},
+  buttons: [{ id: 'start', label: 'Start', primary: true }, { id: 'compare', label: 'Compare', primary: false }] }
 const consent = { step: 'card', card, open: false }
+
+for (const [button, intent] of [['start', 'switch'], ['compare', 'compare']]) {
+  test(`${button} starts the shown trial with ${intent} intent`, async () => {
+    const h = harness()
+    h.respond(async () => ({ page: { mode: 'progress' } }))
+    let closed = false
+    const shown = { ...card, judge_mode: 'third_maker', judge_models: ['judge'], estimate: 1.23, consent: 'seen' }
+    const tree = h.render('StartFlow', { page: { labels: {} }, onClose: () => { closed = true } }, [{ ...consent, card: shown }])
+    const control = action(tree, button)
+    assert.equal(control.props.b.label, button === 'compare' ? 'Compare' : 'Start')
+    assert.equal(control.props.b.primary, button === 'start')
+    control.props.onAct(control.props.b)
+    await tick()
+    assert.equal(h.requests[0].method, 'plugin.shadow.act')
+    assert.equal(h.requests[0].params.action, 'start')
+    assert.equal(h.requests[0].params.intent, intent)
+    assert.equal(h.requests[0].params.model, 'new-model')
+    assert.equal(h.requests[0].params.judge, 'judge')
+    assert.equal(h.requests[0].params.consent, 'seen')
+    assert.equal(closed, true)
+  })
+}
 
 test('a rejected Start card shows the Shadow copy message and keeps the picker open', async () => {
   const h = harness()
@@ -501,7 +524,7 @@ test('Start sends the viewed history selection when requesting refreshed consent
 
 test('a switch warning needs a separate confirm click and Cancel sends nothing', async () => {
   const h = harness()
-  const v = { headline: 'Won 1, lost 8 of 30 turns', word: 'Keep your current model',
+  const v = { headline: 'Won 1, lost 8 of 30 turns', word: 'Stay on your current model',
     table: { columns: [], rows: [] }, buttons: [{ id: 'anyway', label: 'Switch anyway' }], facts: [], maths: {} }
   const page = { mode: 'result', test_id: 'losing', verdict: v }
   const prompt = { message: 'Won 1, lost 8 of 30 turns. Switch anyway?', confirm: 'Switch anyway', cancel: 'Cancel', action: 'anyway' }
@@ -520,4 +543,21 @@ test('a switch warning needs a separate confirm click and Cancel sends nothing',
   await action(confirmed, 'confirm-override').props.onClick()
   assert.equal(h.requests[1].params.confirm_override, true)
   assert.equal(h.requests[1].params.test_id, 'losing')
+})
+
+
+test('the verdict shows the RPC hint directly beneath its small tag', () => {
+  const h = harness()
+  const hint = 'Run more turns to separate them.'
+  const v = { headline: 'Won 4, lost 6 of 30 turns', word: 'Too close to call', advice_hint: hint,
+    table: { columns: [], rows: [] }, buttons: [], facts: [], maths: {} }
+  const tree = h.render('Verdict', { page: { verdict: v }, testId: 'close' })
+  const advice = find(tree, n => n.props.className === 'vword advice')
+  const line = find(tree, n => n.props.className?.includes('advice-hint'))
+  assert.equal(advice.children[0], v.word)
+  assert.equal(line.children[0], hint)
+  assert.equal(advice.type, 'span')
+  v.advice_hint = null
+  assert.equal(find(h.render('Verdict', { page: { verdict: v }, testId: 'close' }),
+    n => n.props.className?.includes('advice-hint')), undefined)
 })

@@ -109,8 +109,8 @@ GOLDEN = {
                      '3 · 9 · 18', '$0.014 vs $0.036', '7.9s vs 13.8s', '4.6 vs 3.7', '7 vs 1',
                      ['−50%', '−71% to −23%', 'p = 0.0015', 'low end −67%']),
     'result-too-close': ('Too close to call', "These turns couldn't separate Hermes 4 70B from your Hermes 4 405B.",
-                         'It leans worse, but a gap this small is easily luck. Worst case this test leaves open: it loses '
-                         '24 more turns than it wins, per 100. Holds up needs 15 or fewer.',
+                         'It leans toward the current model, but a gap this small is easily luck. Worst case this test leaves open: it loses '
+                         '24 more turns than it wins, per 100. To call it a tie, the worst case must be 15 or fewer.',
                          '4 · 20 · 6', '$0.014 vs $0.036', '8.9s vs 13.6s', '3.5 vs 3.4', '1 vs 0',
                          ['−6%', '−27% to +14%', 'p = 0.76', 'low end −24%']),
     'result-not-enough': ('Not enough to go on', 'Stopped at your $5.00 cap after 19 usable turns. Shadow needs 20.',
@@ -124,7 +124,7 @@ GOLDEN = {
 def test_verdict_strings_match_the_design_goldens(scenario):
     word, reason, sure, result, cost, speed, steps, broken, maths = GOLDEN[scenario]
     v = page(scenario)['verdict']
-    tag = {'Better': 'Switch-worthy', 'Holds up': 'Safe to switch', 'Worse': 'Keep your current model'}.get(word, 'Too close to call')
+    tag = {'Better': 'Safe to switch', 'Holds up': 'Switch saves money', 'Worse': 'Stay on your current model'}.get(word, 'Too close to call')
     assert (v['word'], v['reason'], v['sure']) == (tag, reason, sure)
     assert v['headline'].startswith('Won ')
     assert v['table']['columns'][0] == 'Model'
@@ -295,7 +295,8 @@ def test_start_card_and_judge_change():
     assert rows['judge'].startswith('Judged blind by Qwen 3.5 72B, your pick.')
     assert rows['cost'] == 'About $1.85, capped at $5.00. The judge is about $0.35.'
     assert rows['sent'].startswith('Nous Portal, OpenRouter:')
-    assert [b['label'] for b in picked['buttons']] == ['Start', 'See the 30', 'Cancel']
+    assert [(b['label'], b['primary']) for b in picked['buttons']] == [
+        ('Start', True), ('Compare', False), ('See the 30', False), ('Cancel', False)]
 
 
 def test_unreachable_pick_falls_back_to_auto_and_says_so():
@@ -624,18 +625,20 @@ def start_params(r, model, **extra):
             **{key: card[key] for key in ('judge_mode', 'judge_models', 'estimate', 'consent')}}
 
 
-def test_confirmed_fixture_desktop_start_begins_a_running_trial():
+@pytest.mark.parametrize('intent', ['switch', 'compare'])
+def test_confirmed_fixture_desktop_start_begins_a_running_trial(intent):
     r = rpc('empty')
     model = r.source.world['start']['try']
     assert r.source.world['tests'] == []
     card = r.start_card({'model': model})
     assert any(button['id'] == 'start' for button in card['buttons'])
 
-    reply = r.act(start_params(r, model))
+    reply = r.act({**start_params(r, model), 'intent': intent})
 
     assert len(r.source.world['tests']) == 1
     record = r.source.world['tests'][0]
     assert record['state'] == 'running'
+    assert record['intent'] == intent
     assert record['trial']['model'] == model
     assert reply['page']['test_id'] == record['id']
     assert reply['page']['mode'] == 'progress'

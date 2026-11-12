@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 def run_dispatch_checks(guard, session_id, scope, tokens):
     from agent.tool_executor import _ToolCallRef, _pre_tool_block
-    from hermes_cli.middleware import _run_execution_chain
+    from hermes_cli.middleware import run_tool_execution_middleware
     from hermes_cli.plugins import _delivery_manager
 
     checks = {'veto': False, 'middleware': False, 'read_only': False, 'secrets': False}
@@ -35,8 +35,8 @@ def run_dispatch_checks(guard, session_id, scope, tokens):
             block, final_args = _pre_tool_block(agent, ref)
             result = block if block else inert_executor(final_args)
         else:
-            result = _run_execution_chain('tool_execution', inert_executor,
-                                          tool_name=tool_name, args=args, session_id=session_id)
+            result = run_tool_execution_middleware(tool_name, args, inert_executor,
+                                                   session_id=session_id)
         return str(result), attempts
 
     try:

@@ -65,8 +65,9 @@ class Engine:
         return self.store.read()
 
     def validate_routes(self, proposal: Proposal):
-        from .decision import SwitchBlocked
+        from .decision import SwitchBlocked, require_model_change
 
+        require_model_change(proposal.old, proposal.new)
         if not proposal.route_allowed:
             raise SwitchBlocked('trial.switch_incompatible')
         if proposal.gradual and not self.verified_pair(proposal.old, proposal.new):
@@ -545,6 +546,8 @@ class Engine:
             record.resumes += 1
             record.last_turn.clear()
             record.turns.clear()
+            if record.mode == "gradual":
+                record.assignments.clear()
             if record.mode == "all_at_once":
                 record.config_pending = "new"
             self._notice(record, "resume" if record.mode == "gradual" else "watch_start")

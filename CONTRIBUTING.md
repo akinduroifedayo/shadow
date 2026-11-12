@@ -39,6 +39,10 @@ Desktop interaction tests require Node.js. Live model checks use your configured
 
 User-facing copy keys live in `shadow/copy/*.json`. Keep keys unique across files. Update the affected copy fixtures when text changes. The shared loader rejects duplicate keys and non-text values.
 
+## Hermes imports
+
+Use public Hermes plugin APIs. The private imports Shadow still needs, and the public seam each one would need, are listed in [docs/private-hermes-imports.md](docs/private-hermes-imports.md). Update that file when you add or remove one.
+
 ## Open a pull request
 
 Describe the user-visible problem and the resulting behavior. Keep the change focused. Include the commands you ran and their outcomes. Explain skipped checks and any setup needed to reproduce a failure.

@@ -404,11 +404,14 @@ def test_result_keep_and_lost_turn_actions_use_saved_data_only(tmp_path):
     assert len(ctx.capture) == calls
 
 
-def test_result_second_look_keeps_old_pairs_and_replays_thirty_new_turns(tmp_path):
+@pytest.mark.parametrize('intent', ['switch', 'compare'])
+def test_result_second_look_keeps_old_pairs_and_replays_thirty_new_turns(tmp_path, intent):
     ctx, plugin, record = completed_service(tmp_path)
     for index, turn in enumerate(record['turns']):
         set_judge_pick(turn, '1' if index < 4 else '2' if index < 10 else 'same')
     finalize(record)
+    plugin.store.save(record)
+    record['intent'] = intent
     plugin.store.save(record)
     assert record['totals']['word'] == 'too_close'
     assert record['totals']['cant_call_reason'] == 'too_close'
@@ -418,6 +421,7 @@ def test_result_second_look_keeps_old_pairs_and_replays_thirty_new_turns(tmp_pat
     followup = plugin.store.get()
     assert followup['state'] == 'finished'
     assert followup['second_look'] and followup['parent_id'] == record['id']
+    assert followup['intent'] == intent
     assert followup['totals']['pairs'] == 60
     assert [t['id'] for t in followup['turns'][:30]] == [t['id'] for t in record['turns']]
     assert len({t['id'] for t in followup['turns']}) == 60

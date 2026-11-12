@@ -101,6 +101,26 @@ def test_rate_trip_restores_old_next_turn_and_resume_resets_counts(engine):
     assert engine.record.counts("old") == Counts()
 
 
+@pytest.mark.parametrize("lower_share,share,expected_model", [(0, 10, "new"), (10, 50, "old"), (50, 100, "old")])
+def test_gradual_resume_rechooses_existing_conversation_at_ten_percent(engine, lower_share, share, expected_model):
+    start(engine)
+    engine.advance()
+    engine.advance()
+    session = next(f"resume-{i}" for i in range(1000)
+                   if choose_conversation(f"resume-{i}", engine.record.id, share)
+                   and (not lower_share or not choose_conversation(f"resume-{i}", engine.record.id, lower_share)))
+    admit(engine, session)
+    assert request(engine, session)["request"]["model"] == "new"
+    for i in range(3):
+        turn(engine, f"failure-{i}", failed=True)
+    assert engine.record.phase == "paused"
+
+    engine.resume()
+    admit(engine, session, "after-resume")
+    result = request(engine, session, "after-resume")
+    assert (result["request"]["model"] if result else OLD.model) == expected_model
+
+
 def test_retried_request_that_recovers_does_not_trip_or_count_as_trouble(engine):
     start(engine)
     engine.advance()

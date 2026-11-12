@@ -17,15 +17,16 @@ from shadow.trial.verdict import finalize, statistics_for
 TABLE = (
     (15, 11, 4, "better"),
     (10, 18, 2, "better"),
-    (14, 11, 5, "holds_up"),
-    (9, 19, 2, "holds_up"),
+    (14, 11, 5, "better"),
+    (9, 19, 2, "better"),
     (6, 19, 5, "holds_up"),
     (3, 24, 3, "holds_up"),
     (0, 30, 0, "holds_up"),
     (4, 22, 4, "too_close"),
     (4, 20, 6, "too_close"),
-    (2, 19, 9, "too_close"),
+    (2, 19, 9, "worse"),
     (3, 9, 18, "worse"),
+    (2, 9, 9, "worse"),
     (7, 8, 4, "not_enough"),
 )
 
@@ -56,7 +57,7 @@ def _record(won, same, lost):
             turns.append(_turn(index, result))
             index += 1
     return {
-        "id": "verdict", "picked": won + same + lost, "cap": 5, "web_lookups": True, "web_turns": 0,
+        "id": "verdict", "intent": "switch", "picked": won + same + lost, "cap": 5, "web_lookups": True, "web_turns": 0,
         "current": {"provider": "openai-codex", "model": "gpt-6.1-sol", "plan": False},
         "trial": {"provider": "openai-codex", "model": "gpt-6-luna", "plan": False},
         "judge": {"models": [{"provider": "anthropic", "model": "claude-sonnet-4-5"}], "source": "auto", "notice": ""},
@@ -85,7 +86,7 @@ def check(mac: bool = False):
         card = render_verdict(record, stats=True)
         totals = record["totals"]
         shown = verdict_presentation(record)["headline"]
-        advice = {"better": "Switch-worthy", "holds_up": "Safe to switch", "worse": "Keep your current model",
+        advice = {"better": "Safe to switch", "holds_up": "Switch saves money", "worse": "Stay on your current model",
                   "too_close": "Too close to call", "not_enough": "Too close to call"}[actual]
         probe.expect("[" + advice + "]" in card, "advice tag differs from the saved verdict")
         probe.expect(card.splitlines()[0] == shown, f"card heading for {won}/{same}/{lost} was not {shown}")
@@ -106,7 +107,9 @@ def check(mac: bool = False):
                 probe.expect(str(totals["worst_per_100"]) in card, f"ruled-out gap {totals['worst_per_100']} is missing on the card")
             else:
                 probe.expect("about even with yours" in card, "a non-positive gap was not shown as about even")
-    second = statistics_for(10, 18, 2, second_look=True)
+    first = statistics_for(9, 19, 2)
+    probe.expect(first["word"] == "better", "first look did not clear the interval bar")
+    second = statistics_for(9, 19, 2, second_look=True)
     probe.expect(second["word"] != "better", "second look did not raise the bar (shadow/trial/verdict.py:27)")
     note = "mismatched rows: " + ", ".join(mismatches) if mismatches else "single-judge card words match the spec table on every row"
     return probe.finish(

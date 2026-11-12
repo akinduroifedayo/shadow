@@ -2,7 +2,7 @@
 
 Test a new model on your own real conversations. Have it judged fairly, with model names hidden and each answer pair shown in both orders.
 
-Shadow is a Hermes plugin. It replays recent saved turns on the model you want to try and your current model. A judge compares the answers. The result leads with the numbers: turns won, lost, and tied, and the cost difference per turn. It also shows the win rate with its 95% range, speed, tool steps, and broken calls. You can inspect individual turns and switch models with undo. If the test doesn't back the switch, Shadow warns you first and switches only if you confirm.
+Shadow is a Hermes plugin. It replays recent saved turns on the model you want to try and your current model. A judge compares the answers. The result leads with the numbers: turns won, lost, and tied, and the cost difference per turn. It also shows the win rate with its confidence range, speed, tool steps, and broken calls. You can inspect individual turns and switch models with undo. If the test doesn't back the switch, Shadow warns you first and switches only if you confirm.
 
 ![Hermes Desktop with Shadow in the sidebar and the model picker open](docs/images/desktop-home.png)
 
@@ -48,6 +48,7 @@ In the terminal, choose a model from your Hermes profile:
 
 ```bash
 hermes shadow try <model>
+hermes shadow compare <model>
 ```
 
 To choose the judge and set the sample and spending cap:
@@ -55,6 +56,8 @@ To choose the judge and set the sample and spending cap:
 ```bash
 hermes shadow try <model> --judge <judge-model> --turns 30 --days 7 --budget 5
 ```
+
+`try` starts a switch candidate. `compare` starts a neutral comparison with the same sample, judge, and cap options.
 
 Shadow discovers models through Hermes and checks provider access. Running `hermes shadow try` without a model opens the picker.
 
@@ -64,6 +67,7 @@ Use these terminal commands:
 
 | Command | What it does |
 | --- | --- |
+| `hermes shadow compare <model>` | Compare models without recommending a switch. |
 | `hermes shadow doctor` | Check setup and show fixes. |
 | `hermes shadow status` | Show the current test or switch. |
 | `hermes shadow results` | Show the newest saved test record. |
@@ -78,6 +82,7 @@ In chat, replace `hermes shadow` with `/shadow`:
 
 ```text
 /shadow try <model> --judge <judge-model>
+/shadow compare <model> --judge <judge-model>
 /shadow status
 /shadow results <id> --stats
 /shadow cancel
@@ -95,7 +100,7 @@ A single judge counts only if it agrees with itself on at least seven in ten usa
 
 By default, Shadow selects one reachable judge from a maker that made neither contestant. Maker comes from model identity, not the provider that serves it. `--judge` lets you choose an eligible outside-maker judge. A contestant, a model from either contestant's maker, or a model whose maker Shadow can't tell is refused. If the judge you named can't be reached at start, the start card says so and uses the automatic pick instead; if there is no automatic pick, the named judge is refused. If a contestant's maker is unknown, Shadow uses backup judging, and a `--judge` pick is refused.
 
-With one outside-maker judge, **Better** or **Worse** requires an exact sign test below 0.05 on wins against losses. The result also shows a 95% interval for wins minus losses per turn. **Holds up** means the test rules out losing more than 15 turns per 100 net at its one-sided confidence threshold. Other results can be **Too close to call** or **Not enough to go on**.
+With one outside-maker judge, **Better** means the matched-pair interval for wins minus losses per turn sits entirely above zero. **Worse** means it sits entirely below zero. The card shows that same interval, rounded outward. It uses 95% on a first look and 97.5% on a second look. The exact sign test stays on the card as a diagnostic for the luck line and does not decide the verdict. **Holds up** means the test rules out losing more than 15 turns per 100 net at its one-sided confidence threshold. Other results can be **Too close to call** or **Not enough to go on**.
 
 When no outside-maker judge is reachable, both contestants judge each pair blind in both orders. Both judges must clear the self-agreement bar (seven in ten by default; the `judge_swap_consistency_min` setting changes it for backup judging only). A turn counts as won or lost only when both agree, unless a replay failure determines the result. Otherwise it counts as a tie. The 95% bootstrap interval on the win rate, with ties counted as half, must exclude 50% for **Better** or **Worse**. This backup method gives only **Better**, **Worse**, or **Not enough to go on**.
 
@@ -115,15 +120,15 @@ The cost part appears only when both models have a known price per turn. It says
 
 Below the headline:
 
-- **Win-rate bar.** The new model's win rate, with ties counted as half, as a point inside its confidence range (95%, or 97.5% on a backup-judging second look). A marker shows 50%.
+- **Win-rate bar.** The new model's win rate, with ties counted as half, as a point inside its confidence range (95%, or 97.5% on a second look). A marker shows 50%.
 - **Two-model table.** One row per model with win rate, cost per turn, and speed per turn. A column appears only when both models have that measurement recorded.
-- **Advice tag.** A short label that follows the judging rules above. **Switch-worthy** means Better, **Safe to switch** means Holds up, and **Keep your current model** means Worse. Too close to call and Not enough to go on both show **Too close to call**.
+- **Advice tag.** A short label based on why you started the test, its quality outcome, and its cost band. Switch candidates can show **Safe to switch**, **Switch saves money**, or **Stay on your current model**. Comparisons name the model that came out ahead or matched for less, or show **Even match**. Settled quality results keep a factual tag when cost is unknown. See the [full tag table and open decisions](docs/verdict-tags.md).
 
 The receipt underneath shows result counts, cost per turn, speed, tool steps, and broken calls. **Show the numbers** in Desktop and `hermes shadow results <id> --stats` in the terminal list the net win rate, interval, sign test, holds-up check, judge self-agreement, and where the new model won or lost.
 
 This is the real `fb953624` result described below, captured in Hermes Desktop:
 
-![Won 1, lost 8, tied 21 of 30 turns, 74% cheaper per turn, with the win-rate bar, the two-model table, and the Keep your current model tag](docs/images/verdict.png)
+![Won 1, lost 8, tied 21 of 30 turns, 74% cheaper per turn, with the win-rate bar, the two-model table, and the Stay on your current model tag](docs/images/verdict.png)
 
 The next screenshot is sample data, rendered from the plugin's Desktop page with test fixtures. It is not from a real test.
 
@@ -138,7 +143,7 @@ Two demo-profile tests compared GPT-6.1 Terra with GPT-6.1 Sol on 30 replayed tu
 | `565ccb5d` | Claude Sonnet 4.5 | 20 of 30, below seven in ten | Not enough to go on. |
 | `fb953624` | Claude Opus 4.6 | 23 of 30 | Worse. |
 
-On the current result screen, `fb953624` reads "Won 1, lost 8, tied 21 of 30 turns · 74% cheaper per turn" and is tagged **Keep your current model**. Terra won 1 turn, tied 21, and lost 8. The net win rate was -23%, with a 95% interval of -40% to -4%. The sign-test value was 0.039, shown on the card rounded up to 0.040. Both models ran on a plan, so the cost row shows list-price value: about 74% lower per turn for Terra. The test spent $1.46 of a $9 cap.
+On the current result screen, `fb953624` reads "Won 1, lost 8, tied 21 of 30 turns · 74% cheaper per turn" and is tagged **Stay on your current model**. Terra won 1 turn, tied 21, and lost 8. The net win rate was -23%, with a 95% interval of -40% to -4%. The sign-test value was 0.039, shown on the card rounded up to 0.040. Both models ran on a plan, so the cost row shows list-price value: about 74% lower per turn for Terra. The test spent $1.46 of a $9 cap.
 
 The cheaper model performed worse on this sample. The first test gave no verdict because the judge was not steady enough.
 
@@ -172,7 +177,7 @@ The start card shows an estimate before Start. Shadow tracks token spending and 
 
 Subscription-included tokens, such as Codex plan tokens, count as $0 toward the cap. They still use your plan allowance. Metered replay, controller, and judge calls count against the cap. A judge billed through an included plan also counts as $0. The receipt can show approximate list-price value for plan usage.
 
-Every called model needs a known token price. An unknown price or unsupported service tier prevents Start. If a call reports unpriceable usage during a test, Shadow stops and marks spending incomplete. Per-request fees are not priced.
+Every called model needs a known token price. An unknown price or unsupported service tier prevents Start. If a call reports unpriceable usage during a test, Shadow stops and marks spending incomplete. OpenRouter per-request fees from Hermes's cached metadata count in the estimate, spending cap, and verdict cost.
 
 ## Switch with undo
 
@@ -182,7 +187,7 @@ Switch from a saved test:
 hermes shadow switch <id>
 ```
 
-A test tagged **Switch-worthy** or **Safe to switch** backs the switch, and it starts without a warning. You can also name a model instead of a test ID.
+A test where the new model won or tied backs the switch. You can also name a model instead of a test ID.
 
 ### Switch anyway
 
@@ -235,7 +240,7 @@ Replays are close copies, not exact reruns. They use the saved context, current 
 
 A verdict needs at least 20 usable matched turns. Thirty turns can reveal a large gap and miss a small one. A result does not prove that two models are equal.
 
-Prices depend on provider-reported usage and supported token rates. Per-request fees and external web-service charges are outside the token estimate. Plan limits still apply to calls counted as $0.
+Prices depend on provider-reported usage, supported token rates, and OpenRouter per-request fees from Hermes's cached metadata. External web-service charges are outside the estimate. Plan limits still apply to calls counted as $0.
 
 Only one test runs at a time. Tests and active switches exclude each other. During a reload window, in-flight work and UI state can lag saved progress. Reopen Shadow and check status before acting again.
 

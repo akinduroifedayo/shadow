@@ -26,7 +26,7 @@ from .reads import SafeReads
 from .safety import ReplayGuard
 from .tiers import profile_service_tiers, normal_service_tiers, prices_for_tiers
 from .usage import resolve_prices
-from .verdict import finalize
+from .verdict import finalize, refresh_statistics
 
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ class TrialPlugin:
     def parser(self, *, terminal=False):
         parser = Parser(prog='hermes shadow' if terminal else '/shadow', add_help=True)
         verbs = parser.add_subparsers(dest='verb')
-        trial = verbs.add_parser('try')
+        trial = verbs.add_parser('try', aliases=['compare'])
         trial.add_argument('model', nargs='?')
         trial.add_argument('--turns', type=int, default=30)
         trial.add_argument('--days', type=int, default=7)
@@ -165,7 +165,7 @@ class TrialPlugin:
                     return self.verify_pair(terminal=terminal, yes=args.yes, **({'old_model': args.old_model, 'new_model': args.new_model, 'provider': args.provider} if args.old_model or args.new_model or args.provider else {}))
                 return self.doctor()
             self.store.prune()
-            if args.verb == 'try':
+            if args.verb in {'try', 'compare'}:
                 return self.prepare(args, terminal=terminal, origin={'session_id': session_id, 'session_key': session_key, 'platform': platform})
             if args.verb == 'status':
                 record = self.active_record() or self.store.get()
@@ -233,11 +233,12 @@ class TrialPlugin:
             handler = self.ctx.shadow_command_routes.get('switch')
             return handler('switch ' + record['id'], terminal=terminal) if handler else copy('trial.switch_unavailable')
         if action == 'more' and any(c['value'] == 'more' for c in choices):
-            args = self.parser(terminal=terminal).parse_args(['try', f'{record["trial"]["provider"]}::{record["trial"]["model"]}', '--days', str(record['days']), '--budget', str(record['cap'])])
+            args = self.parser(terminal=terminal).parse_args(['compare' if record['intent'] == 'compare' else 'try', f'{record["trial"]["provider"]}::{record["trial"]["model"]}', '--days', str(record['days']), '--budget', str(record['cap'])])
             return self.prepare(args, terminal=terminal, origin=record['origin'], previous=record)
         return text
 
     def verdict_view(self, record):
+        record = refresh_statistics(record)
         switch = getattr(self.ctx, 'shadow_switch', None)
         if switch:
             proposal = self.proposal(record['id'])
@@ -305,7 +306,7 @@ class TrialPlugin:
         engine = TrialEngine(self.ctx, self.store, self.guard)
         config = self.configuration()
         service_tiers = profile_service_tiers(config)
-        record = engine.prepare(selection, current, trial, catalog, cap=args.budget, days=args.days, judge=args.judge, origin=origin, web_lookups=self.ctx.get_config('web_lookups', True), previous=previous, service_tiers=service_tiers)
+        record = engine.prepare(selection, current, trial, catalog, cap=args.budget, days=args.days, judge=args.judge, origin=origin, web_lookups=self.ctx.get_config('web_lookups', True), previous=previous, service_tiers=service_tiers, intent='compare' if args.verb == 'compare' else 'switch')
         while True:
             text = render_start(record, cli=terminal, isolation_verified=self.launcher.isolation_verified)
             if not self.launcher.isolation_verified:
@@ -349,7 +350,7 @@ class TrialPlugin:
                     args.judge = f'{chosen.provider}::{chosen.model}' if selected != '0' else None
             else:
                 return text
-            record = engine.prepare(selection, current, trial, catalog, cap=args.budget, days=args.days, judge=args.judge, origin=origin, web_lookups=record['web_lookups'], run_id=record['id'], previous=previous, service_tiers=service_tiers)
+            record = engine.prepare(selection, current, trial, catalog, cap=args.budget, days=args.days, judge=args.judge, origin=origin, web_lookups=record['web_lookups'], run_id=record['id'], previous=previous, service_tiers=service_tiers, intent='compare' if args.verb == 'compare' else 'switch')
         if not record['can_start']:
             return text
         if terminal:
@@ -380,23 +381,26 @@ class TrialPlugin:
                 threading.Thread(target=lambda: context.run(self.watch, record['id']), daemon=True).start()
         return '' if terminal else text
 
-    def normal_profile_service_tiers(self):
+    def freeze_profile_service_tiers(self, record):
         try:
-            return normal_service_tiers(profile_service_tiers(self.configuration()))
+            tiers = profile_service_tiers(self.configuration())
         except (ImportError, OSError, ValueError, TypeError):
-            return False
+            tiers = None
+        record['service_tiers'] = list(tiers) if tiers is not None else None
+        return tiers is not None and normal_service_tiers(tiers)
 
     def start_controller(self, record, *, expected_claim=None):
         claim = self.store.claim_controller(record['id'], record.get('controller_pid'), expected_claim=expected_claim)
         if claim is None:
             return
-        if not self.normal_profile_service_tiers():
-            record.update(self.store.get(record['id']))
+        record.update(self.store.get(record['id']))
+        if not self.freeze_profile_service_tiers(record):
             record.update(state='interrupted', stop_reason='unpriceable', can_start=False,
                           pricing_blocker='service_tier')
             self.store.save(record)
             self.store.controller_failed(record['id'], claim)
             return False
+        self.store.save(record)
         try:
             pid = self.launcher.launch(self.store.get(record['id']))
         except (OSError, IsolationRequired):
@@ -412,10 +416,13 @@ class TrialPlugin:
         pid = record.get('controller_pid')
         owner = pid if pid is not None else record.get('controller_owner_pid')
         if check and owner is not None and not check(owner):
-            reason = 'controller_exited' if self.normal_profile_service_tiers() else 'unpriceable'
-            if self.store.controller_stopped(record['id'], record['controller_token'], reason) and reason == 'unpriceable':
+            reason = 'controller_exited' if self.freeze_profile_service_tiers(record) else 'unpriceable'
+            tiers = record['service_tiers']
+            if self.store.controller_stopped(record['id'], record['controller_token'], reason):
                 record = self.store.get(record['id'])
-                record.update(can_start=False, pricing_blocker='service_tier')
+                record['service_tiers'] = tiers
+                if reason == 'unpriceable':
+                    record.update(can_start=False, pricing_blocker='service_tier')
                 self.store.save(record)
             return self.store.get(record['id'])
         return record
@@ -540,6 +547,19 @@ class TrialPlugin:
                 if record and record['controller_token'] == marker[2] and record['state'] in {'queued', 'running'}:
                     self.store.controller_started(record['id'], marker[2], os.getpid())
                     if self.engine is None or self.engine.record['state'] in {'finished', 'cancelled', 'interrupted'} and self.engine.record['id'] != record['id']:
+                        if not self.freeze_profile_service_tiers(record):
+                            record.update(state='interrupted', stop_reason='unpriceable', can_start=False,
+                                          pricing_blocker='service_tier')
+                            self.store.save(record)
+                            self.store.controller_failed(record['id'], marker[2])
+                            parent = self.store.get(record['parent_id']) if record.get('parent_id') else None
+                            if parent and record['spend'] <= parent['spend']:
+                                self.store.release_second_look(parent['id'], record['id'])
+                            with self.guard.lock:
+                                self.guard.controllers.discard(record.get('controller_session_id'))
+                                if not self.guard.controllers:
+                                    self.guard.exclusive = False
+                            return {'action': 'block', 'message': copy('start.service_tier')}
                         self.engine = TrialEngine(self.ctx, self.store, self.guard)
                         record['state'] = 'interrupted'
                         try:
@@ -669,6 +689,7 @@ class TrialPlugin:
         for record in records:
             if not record or 'totals' not in record or set(record.get('routes', {})) != {'current', 'trial'} or record.get('route_conflicts'):
                 continue
+            record = refresh_statistics(record)
             try:
                 proposal = Proposal(record['id'], Route(**record['routes']['current']), Route(**record['routes']['trial']), record['totals']['word'])
             except (TypeError, ValueError, KeyError):
@@ -735,7 +756,7 @@ def register(ctx, plugin=None):
     routes = getattr(ctx, 'shadow_command_routes', None)
     if routes is None:
         routes = ctx.shadow_command_routes = {}
-    routes.update({name: service.command for name in ('', 'try', 'results', 'cancel', 'forget')})
+    routes.update({name: service.command for name in ('', 'try', 'compare', 'results', 'cancel', 'forget')})
     for name in ('status', 'doctor', 'undo'):
         routes.setdefault(name, service.command)
     if not getattr(ctx, 'shadow_router_registered', False):

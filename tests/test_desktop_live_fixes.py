@@ -149,3 +149,37 @@ def test_shown_prompts_keep_user_hex_and_follow_up_prose():
     original = 'Nobody is available to answer follow-up questions.\n' + 'c' * 32
     turn['goal'] = original
     assert d.DesktopRpc(source, COPY).turn_open({'test_id': record['id'], 'turn_id': turn['id']})['ask'] == original
+
+
+@pytest.mark.parametrize('counts', [(15, 11, 4), (6, 19, 5), (3, 9, 18), (4, 20, 6)])
+def test_valid_verdict_counts_remain_readable_on_both_surfaces(tmp_path, counts):
+    from test_cards import card_record
+    from shadow.trial.cards import render_verdict
+
+    record = card_record(tmp_path, counts)
+    source = result_source()
+    source.world['tests'] = [record]
+    view = d.DesktopRpc(source, COPY).page_state({})['verdict']
+    assert 'counts not readable' not in view['caption']
+    assert not view['faint']
+    assert 'counts not readable' not in render_verdict(record, cli=True)
+
+
+@pytest.mark.parametrize('reason,sentence', [
+    ('judge_unsure', 'The judge disagreed with itself too often to trust these counts.'),
+    ('judge_ineligible', 'No eligible judge panel could confirm these counts.'),
+    ('runs_varied', 'Repeated runs varied too much to trust these counts.'),
+])
+def test_unreliable_counts_explain_why_in_a_sentence_on_both_surfaces(tmp_path, reason, sentence):
+    from test_cards import card_record
+    from shadow.trial.cards import render_verdict
+
+    record = card_record(tmp_path)
+    record['totals'].update(word='not_enough', cant_call_reason=reason)
+    record['totals']['receipt']['counts_readable'] = 'no'
+    source = result_source()
+    source.world['tests'] = [record]
+    view = d.DesktopRpc(source, COPY).page_state({})['verdict']
+    assert sentence in view['caption']
+    assert sentence in ' '.join(render_verdict(record, cli=True).split())
+    assert 'counts not readable:' not in view['caption']

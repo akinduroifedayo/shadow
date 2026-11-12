@@ -1,6 +1,6 @@
 """Capture the real CLI cards and owner confirmation flow using offline fixtures.
 
-python3 desktop/dev/capture_cli.py /workspace/shadow-video/source/verdict-v2
+python3 desktop/dev/capture_cli.py <output-dir>
 """
 import argparse
 import json
@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from shadow.common.discovery import ModelCatalog
 from shadow.common.models import Model
+from shadow.common.storage import parse_trial_record
 from shadow.switch import Engine, Proposal, Route, Store
 from shadow.switch.plugin import SwitchPlugin
 from shadow.trial.cards import render_verdict
@@ -21,7 +22,8 @@ from shadow.trial.presentation import verdict_presentation
 
 
 def record_for(scenario):
-    record = json.loads((ROOT / 'desktop' / 'fixtures' / f'result-{scenario}.json').read_text())['tests'][0]
+    name = 'result' if scenario == 'holds-up' else f'result-{scenario}'
+    record = parse_trial_record(json.loads((ROOT / 'desktop' / 'fixtures' / f'{name}.json').read_text())['tests'][0])
     for model in (record['current'], record['trial'], *record['judge']['models']):
         for key in list(model):
             if key not in {'provider', 'model', 'plan', 'reachable'}:

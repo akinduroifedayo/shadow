@@ -18,6 +18,18 @@ SCHEMA = {'type': 'object', 'properties': {
     'reason': {'type': 'string'}}, 'required': ['pick', 'fixes_1', 'fixes_2', 'reason_kind', 'reason'], 'additionalProperties': False}
 
 
+class JudgeRequestError(ValueError):
+    pass
+
+
+def judge_error_text(record, c=copy):
+    if record.get('totals', {}).get('cant_call_reason') != 'judge_unreachable':
+        return ''
+    message = next((call['error_message'] for call in reversed(record.get('usage_calls', []))
+                    if call.get('kind') == 'judge' and call.get('error_message')), '')
+    return c('judge.provider_error', error=Scrubber().text(message)) if message else ''
+
+
 @dataclass(frozen=True)
 class JudgeChoice:
     mode: str
@@ -113,13 +125,15 @@ class Judge:
                 payload = _blind(payload, (*self.contestants, *self.choice.models))
                 try:
                     response = self.llm.complete_structured(instructions=INSTRUCTIONS, input=[{'type': 'text', 'text': json.dumps(payload, ensure_ascii=False)}], json_schema=SCHEMA, provider=model.provider, model=model.model, max_tokens=512, timeout=30)
-                except Exception:
+                except Exception as exc:
+                    message = Scrubber().text(next((line.strip() for line in str(exc).splitlines() if line.strip()), type(exc).__name__))[:300]
                     usage = parse_usage(None, input_text=json.dumps(payload))
                     # No response, so no answering route: hold an estimate at the requested judge's stored price
                     # (None only when that price is truly unknown, which keeps the unknown-price backstop).
                     after_call({'provider': '', 'model': '', 'requested_provider': model.provider, 'requested_model': model.model,
-                                'usage': usage.record(), 'cost': cost_usage(stored_price(self.prices, model), usage), 'error': 'request_failed'})
-                    raise ValueError('judge request failed') from None
+                                'usage': usage.record(), 'cost': cost_usage(stored_price(self.prices, model), usage),
+                                'error': 'request_failed', 'error_message': message})
+                    raise JudgeRequestError(message) from None
                 try:
                     usage = parse_usage(response.usage, input_text=json.dumps(payload), output_text=response.text)
                 except (TypeError, ValueError, AttributeError):

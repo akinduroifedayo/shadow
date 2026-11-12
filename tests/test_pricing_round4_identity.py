@@ -97,12 +97,13 @@ def test_judge_exception_holds_an_estimate_and_does_not_stop_as_unpriceable(tmp_
     ctx.llm.complete_structured = request_failed
     judge = Judge(ctx.llm, choose_judge(CURRENT, TRIAL, [OUTSIDE]), (TRIAL, CURRENT), prices=record['prices'])
 
-    with pytest.raises(ValueError, match='judge request failed'):
+    with pytest.raises(ValueError, match='request timed out'):
         judge.call(selection(tmp_path, 20).turns[0], [{}, {}], after_call=engine.charge_judge)
 
     call = record['usage_calls'][0]
     assert record.get('stop_reason') != 'unpriceable'
     assert call['error'] == 'request_failed'
+    assert call['error_message'] == 'request timed out'
     assert not call['provider'] and not call['model']
     assert (call['requested_provider'], call['requested_model']) == (OUTSIDE.provider, OUTSIDE.model)
     assert call['usage']['estimated'] is True

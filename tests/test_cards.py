@@ -17,6 +17,15 @@ from shadow.trial.safety import ReplayGuard
 from shadow.trial.verdict import finalize
 
 
+VERDICT_COUNTS = {
+    'better': (15, 11, 4),
+    'holds_up': (6, 19, 5),
+    'worse': (3, 9, 18),
+    'too_close': (4, 20, 6),
+    'not_enough': (7, 8, 4),
+}
+
+
 def card_record(tmp_path, counts=(15, 11, 4)):
     engine = TrialEngine(FakeContext(), Store(tmp_path / 'cards.sqlite'), ReplayGuard())
     record = engine.prepare(selection(tmp_path, sum(counts)), CURRENT, TRIAL, [OUTSIDE])
@@ -54,7 +63,7 @@ def test_cards_render_saved_counts_and_five_receipt_columns(tmp_path, counts, wo
     record = card_record(tmp_path, counts)
     text = render_verdict(record, cli=True, stats=True)
     assert text.splitlines()[0].startswith(f'Won {counts[0]}, lost {counts[2]}')
-    assert '[' + {'Better': 'Switch-worthy', 'Holds up': 'Safe to switch', 'Worse': 'Keep your current model'}.get(word, 'Too close to call') + ']' in text
+    assert '[' + {'Better': 'Safe to switch', 'Holds up': 'Safe to switch', 'Worse': 'Stay on your current model'}.get(word, 'Too close to call') + ']' in text
     assert f'Won {counts[0]} · Same {counts[1]} · Lost {counts[2]} of {sum(counts)}' in text
     assert len(receipt_columns(record)) == 5
     assert '8.6s vs 13.9s' in text and '3.0 vs 4.0 steps' in text
@@ -136,9 +145,10 @@ def test_terminal_menu_enter_keeps_current_model(tmp_path):
     assert 'hermes shadow switch' not in text
 
 
-@pytest.mark.parametrize('counts', [(15,11,4), (6,19,5), (4,20,6), (3,9,18), (7,8,4)])
+@pytest.mark.parametrize('counts,notice', [((15,11,4), True), ((6,19,5), True), ((4,20,6), False),
+                                           ((3,9,18), False), ((7,8,4), False)])
 @pytest.mark.parametrize('issue', ['api_mode', 'base_url', 'conflict', 'missing'])
-def test_unsupported_routes_explain_why_no_switch_is_offered(tmp_path, counts, issue):
+def test_unsupported_routes_only_explain_blocked_regular_switch(tmp_path, counts, notice, issue):
     record = card_record(tmp_path, counts)
     if issue == 'api_mode':
         record['routes']['trial']['api_mode'] = 'anthropic_messages'
@@ -153,8 +163,9 @@ def test_unsupported_routes_explain_why_no_switch_is_offered(tmp_path, counts, i
         normalized = ' '.join(text.split())
         assert 'Switch gradually' not in text and 'switch gradually anyway' not in text
         assert '/shadow switch' not in text and 'hermes shadow switch' not in text
-        assert {'api_mode': 'different request formats or endpoints', 'base_url': 'different request formats or endpoints',
-                'conflict': 'routes changed', 'missing': 'did not verify both model routes'}[issue] in normalized
+        explanation = {'api_mode': 'different request formats or endpoints', 'base_url': 'different request formats or endpoints',
+                       'conflict': 'routes changed', 'missing': 'did not verify both model routes'}[issue]
+        assert (explanation in normalized) == notice
     assert 'switch' not in {choice['value'] for choice in result_actions(record)}
 
 

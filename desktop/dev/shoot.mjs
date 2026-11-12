@@ -76,7 +76,7 @@ async function checkVerdict(scenario) {
     const t = s => [...document.querySelectorAll(s)].map(e => e.textContent)
     return { word: t('.vword')[0], reason: t('.vsent')[0], sure: t('.sure')[0], facts: t('.factsline > span'),
       cells: [...document.querySelectorAll('[data-cell]')].map(e => [e.dataset.cell, e.querySelector('.rv').textContent, e.querySelector('.sub').textContent]),
-      bar: document.querySelector('.rate-track')?.getAttribute('aria-label'), headline: t('.vheadline')[0], buttons: t('.strip .btns .btn'),
+      hint: t('.advice-hint')[0], bar: document.querySelector('.rate-track')?.getAttribute('aria-label'), headline: t('.vheadline')[0], buttons: t('.strip .btns .btn'),
       sub: t('.top .sub')[0] } })()`)
   expect(dom.word === v.word && dom.reason === v.reason && dom.sure === v.sure, `${scenario}: word/reason/sure`)
   expect(JSON.stringify(dom.facts) === JSON.stringify(v.facts), `${scenario}: facts ${JSON.stringify(dom.facts)}`)
@@ -85,6 +85,7 @@ async function checkVerdict(scenario) {
     expect(got && norm(got[1]) === norm(flat(cell.value)), `${scenario}: receipt ${cell.key} ${got && got[1]} != ${flat(cell.value)}`)
     expect(got && norm(got[2]) === norm(cell.sub.join(' ') || ' '), `${scenario}: receipt sub ${cell.key}`)
   }
+  expect((dom.hint || null) === v.advice_hint, `${scenario}: advice hint`)
   expect(dom.headline === v.headline, `${scenario}: headline`)
   expect(dom.bar === v.bar?.label, `${scenario}: bar`)
   expect(JSON.stringify(dom.buttons) === JSON.stringify([...v.buttons, ...(v.quiet ? [v.quiet] : [])].map(b => b.label)), `${scenario}: buttons`)
@@ -130,10 +131,18 @@ async function main() {
   await click('[data-turn="t01"]'); await shot('progress-open-turn')
   expect(!(await evaluate(`document.querySelector('.sbs').textContent`)).includes('Hermes 4'), 'progress: opened turn stays blind')
 
-  for (const s of ['result', 'result-better', 'result-worse', 'result-too-close', 'result-not-enough', 'result-backup']) {
+  for (const s of ['result', 'result-better', 'result-worse', 'result-too-close', 'result-not-enough', 'result-backup', 'result-compare']) {
     await open(s)
     await checkVerdict(s)
     await shot(s)
+    const tagShot = { result: 'verdict-tag-switch-saves-money', 'result-worse': 'verdict-tag-switch-stay',
+      'result-too-close': 'verdict-tag-switch-too-close', 'result-better': 'verdict-tag-switch-safe-to-switch' }[s]
+    if (tagShot) await shot(tagShot)
+    if (s === 'result-compare') {
+      await shot('verdict-tag-compare-came-out-ahead')
+      expect(!(await evaluate(`document.querySelector('.vword').textContent`)).toLowerCase().includes('switch'), 'compare: neutral tag')
+      expect(!(await evaluate(`document.querySelector('.btns .btn.primary[data-action="switch"]')`)), 'compare: switch action is not primary')
+    }
   }
   await open('result-worse')
   await click('[data-action="anyway"]'); await shot('switch-anyway-confirm')
@@ -172,10 +181,17 @@ async function main() {
 
   await open('result'); await click('[data-action="try"]'); await shot('start-models')
   await click('[data-model="nousresearch/hermes-4-70b-fp8-2026-08-14"]'); await shot('start-card')
+  expect(await evaluate(`document.querySelector('[data-action="compare"]').textContent`) === 'Compare', 'start card: Compare label')
+  expect(!(await evaluate(`document.querySelector('[data-action="compare"]').classList.contains('primary')`)), 'start card: Compare is secondary')
+  await shot('start-card-compare')
   await click('[data-action="judge-change"]'); await shot('start-card-judge-open')
   await click('[data-judge="moonshot/kimi-k2"]'); await shot('start-card-judge-picked')
   expect((await evaluate(`document.querySelector('.rows').textContent`)).includes('Judged blind by Kimi K2, your pick.'), 'start card: picked judge line')
   expect((await evaluate(`document.querySelector('.rows').textContent`)).includes('About $2.05, capped at $5.00. The judge is about $0.55.'), 'start card: cost follows the judge')
+  await click('[data-action="compare"]')
+  const started = await evaluate(`window.__rpc.findLast(r => r.method === 'plugin.shadow.act').params`)
+  expect(started.action === 'start' && started.intent === 'compare', 'Compare submits a start with compare intent')
+  expect(await evaluate(`document.querySelector('.shd').dataset.mode`) === 'progress', 'Compare starts the trial')
 
   await open('result', 660, 900); await shot('result-narrow')
   expect(await evaluate(`[...document.querySelectorAll('.vheadline, .rate-track, .model-comparison, .strip .btns')].every(e => e.getBoundingClientRect().right <= innerWidth)`), 'narrow: header and controls fit the page')
