@@ -230,6 +230,25 @@ def test_pair_command_uses_ctx_llm_without_a_parent_session(tmp_path, monkeypatc
     assert len(live.calls) == 2 and written[0]['probe_passed'] is True
 
 
+@pytest.mark.parametrize('profile,command', [('default', 'hermes'), ('work', 'hermes -p work')])
+@pytest.mark.parametrize('terminal', [False, True])
+def test_pair_trust_refusal_explains_both_grants(tmp_path, monkeypatch, profile, command, terminal):
+    from shadow.switch import pair_probe
+
+    def denied(*args):
+        raise TrustDenied('secret-exception-canary')
+
+    live = LiveCompletions(denied)
+    live.profile_name = profile
+    monkeypatch.setattr(pair_probe, 'profile_home', lambda: tmp_path)
+    output = run_command(_service(ctx=live), terminal=terminal, yes=True, old_model=OLD, new_model=NEW)
+    assert 'llm_trust_denied' in output
+    assert 'plugins.entries.shadow.llm.allow_provider_override' in output
+    assert 'plugins.entries.shadow.llm.allow_model_override' in output
+    assert command + ' plugins enable shadow' in output
+    assert 'secret-exception-canary' not in output
+
+
 def test_route_with_a_query_is_not_stored():
     assert clean_route(PROVIDER, OLD, BASE + '?key=secret', MODE) is None
     assert clean_route(PROVIDER, OLD, BASE, MODE)['base_url'] == BASE

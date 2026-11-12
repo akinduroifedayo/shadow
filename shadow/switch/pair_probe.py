@@ -252,6 +252,10 @@ def run_command(service, *, terminal, yes, old_model=None, new_model=None, provi
                       evidence_dir=home / 'plugin-data' / 'shadow', config=config)
     passed = probe.run(provider, pair[0], pair[1])
     text = copy('doctor.pair_pass') if passed else copy('doctor.pair_fail') + '\n' + copy('switch.doctor.pair_failure_reason', reason=probe.reason_code)
+    if probe.reason_code == 'llm_trust_denied':
+        from .doctor import hermes_command
+        text += '\n' + copy('switch.doctor.pair_trust_fix',
+                            command=hermes_command(getattr(service.ctx, 'profile_name', None)))
     return text if terminal else line + '\n' + text
 
 
