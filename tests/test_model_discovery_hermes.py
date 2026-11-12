@@ -51,7 +51,6 @@ def test_real_hermes_discovers_gemini_before_any_provider_lookup(tmp_path):
 @pytest.mark.parametrize('warm_cache', [False, True])
 @pytest.mark.parametrize('preload', ['none', 'registry', 'listing', 'lookup'])
 def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
-    """Trap discovery effects, recording the documented Hermes initialization reads."""
     if not HERMES_SOURCE:
         pytest.skip('set SHADOW_HERMES_SOURCE to a Hermes source checkout for the offline safety test')
     source = Path(HERMES_SOURCE).resolve()
