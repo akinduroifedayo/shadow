@@ -21,16 +21,17 @@ def run_dispatch_checks(guard, session_id, scope, tokens):
             return 'setup inert executor reached'
 
         guard.children[session_id] = replace(original, stopped=False)
+        identity = {'session_id': session_id, 'task_id': '', 'tool_call_id': 'shadow-setup-proof',
+                    'turn_id': '', 'api_request_id': '', 'conversation_id': ''}
         if layer == 'veto':
             directive = guard.pre_tool_call(
-                tool_name=tool_name, args=args, session_id=session_id,
-                task_id='', tool_call_id='shadow-setup-proof', middleware_trace=[])
+                tool_name=tool_name, args=args, middleware_trace=[], **identity)
             result = (directive['message'] if directive and directive.get('action') == 'block'
                       else inert_executor(args))
         else:
             result = guard.tool_execution(
                 tool_name=tool_name, args=args, next_call=inert_executor,
-                original_args=args, session_id=session_id)
+                original_args=args, **identity)
         return str(result), attempts
 
     try:

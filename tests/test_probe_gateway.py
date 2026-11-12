@@ -9,6 +9,12 @@ from test_probe_dispatch import hermes_dispatch
 from test_setup_check import _job, _plugin
 
 
+@pytest.fixture
+def gateway_home(tmp_path, monkeypatch, hermes_dispatch):
+    import hermes_constants
+    monkeypatch.setattr(hermes_constants, 'get_hermes_home', lambda: tmp_path / 'home')
+
+
 @pytest.mark.parametrize('profile,command', [('default', 'hermes gateway restart'),
                                             ('demo', 'hermes -p demo gateway restart')])
 @pytest.mark.parametrize('state', ['ready', 'starting', 'inaccessible'])
@@ -34,7 +40,7 @@ def test_absent_gateway_keeps_timeout(monkeypatch):
     assert missing_setup_result('/profile', 'demo') == {'passed': False, 'timed_out': True}
 
 
-def test_setup_without_hooks_uses_gateway_hint_after_launch(tmp_path, monkeypatch, hermes_dispatch):
+def test_setup_without_hooks_uses_gateway_hint_after_launch(tmp_path, monkeypatch, gateway_home):
     _, plugin = _plugin(tmp_path)
     job = _job(tmp_path)
     launched = []
@@ -49,7 +55,7 @@ def test_setup_without_hooks_uses_gateway_hint_after_launch(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize('crash', [False, True])
-def test_resident_gateway_runs_distinct_setup_jobs_but_refuses_replayed_job(tmp_path, monkeypatch, hermes_dispatch, crash):
+def test_resident_gateway_runs_distinct_setup_jobs_but_refuses_replayed_job(tmp_path, monkeypatch, gateway_home, crash):
     _, plugin = _plugin(tmp_path)
     first = _job(tmp_path)
     second = probe.new_job(home=first['home'], workspace=first['workspace'],
@@ -78,7 +84,7 @@ def test_resident_gateway_runs_distinct_setup_jobs_but_refuses_replayed_job(tmp_
     assert plugin.launcher.isolation_verified is False
 
 
-def test_resident_gateway_refuses_overlapping_setup_job(tmp_path, monkeypatch, hermes_dispatch):
+def test_resident_gateway_refuses_overlapping_setup_job(tmp_path, monkeypatch, gateway_home):
     _, plugin = _plugin(tmp_path)
     first = _job(tmp_path)
     second = probe.new_job(home=first['home'], workspace=first['workspace'],

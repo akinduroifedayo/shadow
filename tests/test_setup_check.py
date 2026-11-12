@@ -273,14 +273,12 @@ def test_memory_source_distinguishes_empty_and_short_saved_memory(tmp_path, text
 
 
 @pytest.mark.parametrize('layer', ['veto', 'middleware'])
-def test_setup_refuses_missing_registered_blocking_layer(tmp_path, hermes_dispatch, layer):
+def test_setup_refuses_a_bypassed_blocking_callback(tmp_path, monkeypatch, layer):
     ctx, plugin = _plugin(tmp_path)
-    from hermes_cli.plugins import _delivery_manager
-    manager = _delivery_manager()
     if layer == 'veto':
-        manager._hooks['pre_tool_call'].clear()
+        monkeypatch.setattr(plugin.guard, 'pre_tool_call', lambda **kwargs: None)
     else:
-        manager._middleware['tool_execution'].clear()
+        monkeypatch.setattr(plugin.guard, 'tool_execution', lambda **kwargs: kwargs['next_call'](kwargs['args']))
     ctx.subagent_lifecycle = _Life(ctx)
     result = SetupProbe(plugin, _job(tmp_path)).run()
     assert result[layer] is False

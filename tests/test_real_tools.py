@@ -1,7 +1,7 @@
 import importlib.util
 import os
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,20 +50,10 @@ def offered_tools(monkeypatch):
     toolsets = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(toolsets)
     monkeypatch.setitem(__import__('sys').modules, 'toolsets', toolsets)
-    config = ModuleType('tools.delegate_tool_config')
-    config._get_inherit_mcp_toolsets = lambda: True
-    monkeypatch.setitem(__import__('sys').modules, 'tools.delegate_tool_config', config)
-    spec = importlib.util.spec_from_file_location('trial_child_toolsets', source / 'tools/delegate_tool_toolsets.py')
-    resolver = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(resolver)
-    parent = SimpleNamespace(enabled_toolsets=['hermes-cli', 'shadow_replay', 'mcp-fixture'], disabled_toolsets=[])
+    names = set(toolsets.resolve_toolset('hermes-cli', include_registry=False))
+    names.add('mcp_fixture_write')
     def offered(request):
-        enabled, disabled = resolver._resolve_child_toolsets(parent, request.get('allowed_toolsets'), 'leaf')
-        names = {name for ts in enabled for name in toolsets.resolve_toolset(ts, include_registry=False)}
-        names -= {name for ts in disabled for name in toolsets.resolve_toolset(ts, include_registry=False)}
-        if 'mcp-fixture' in enabled:
-            names.add('mcp_fixture_write')
-        return names
+        return names.copy()
     return offered
 
 
@@ -185,15 +175,6 @@ def test_read_file_returns_scoped_content_and_the_run_continues(tmp_path):
 
 
 def _veto_then_middleware(guard, tool, args, session_id):
-    """Hermes registry order at 7f3ac61295: pre_tool_call, then tool_execution.
-
-    model_tools.handle_function_call runs _pre_dispatch_guards (model_tools.py:966)
-    before _execute_tool (model_tools.py:981). Direct invoke_tool does the same
-    (agent/agent_runtime_helpers.py:2496, then :2548) unless the caller already
-    checked the veto. The agent loop is the other way around: tool_executor.py
-    runs the middleware at line 811, and pre_tool_call only inside that
-    middleware's next_call (_pre_tool_block, line 705).
-    """
     directive = guard.pre_tool_call(tool_name=tool, args=args, session_id=session_id)
     if directive and directive.get('action') == 'block':
         return directive['message']

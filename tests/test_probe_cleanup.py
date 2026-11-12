@@ -226,7 +226,8 @@ def test_timed_out_setup_hook_cannot_call_the_controller_provider(tmp_path, monk
             finished.set()
 
     monkeypatch.setattr(probe.SetupProbe, 'run', slow_probe)
-    monkeypatch.setattr(hermes_dispatch.plugins, '_resolve_hook_callback_timeout', lambda: 0.01)
+    monkeypatch.setattr(hermes_dispatch.plugins, 'load_config_readonly',
+                        lambda: {'plugins': {'hook_callback_timeout': 0.01}})
     manager = hermes_dispatch.manager
     manager._hooks['pre_llm_call'] = [controller_hook]
     manager._middleware['llm_execution'] = [plugin.ctx.middleware['llm_execution']]

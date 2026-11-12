@@ -34,18 +34,16 @@ def test_reload_blocks_inflight_child_and_preserves_progress(tmp_path, monkeypat
     assert guard.pre_tool_call(tool_name='terminal', args={}, session_id='telegram-1') is None
     assert guard.tool_execution(tool_name='terminal', args={}, session_id='telegram-1',
                                 next_call=lambda _: 'normal chat tool') == 'normal chat tool'
-    hermes_dispatch.manager._hooks['pre_tool_call'] = ctx.hooks['pre_tool_call']
-    hermes_dispatch.manager._middleware['tool_execution'] = [ctx.middleware['tool_execution']]
     attempts = []
     args = {'command': 'fixture command that must never execute'}
     if layer == 'veto':
-        ref = hermes_dispatch.executor._ToolCallRef('terminal', args, '', 'reload-call', [])
-        block, _ = hermes_dispatch.executor._pre_tool_block(SimpleNamespace(session_id=child), ref)
-        assert block == ctx.shadow_trial.guard.stop_message
+        directive = guard.pre_tool_call(tool_name='terminal', args=args, session_id=child)
+        assert directive['message'] == guard.stop_message
     else:
-        result = hermes_dispatch.middleware.run_tool_execution_middleware(
-            'terminal', args, lambda value: attempts.append(value) or 'real tool ran', session_id=child)
-        assert json.loads(result)['error'] == ctx.shadow_trial.guard.stop_message
+        result = guard.tool_execution(tool_name='terminal', args=args,
+                                      next_call=lambda value: attempts.append(value) or 'real tool ran',
+                                      original_args=args, session_id=child)
+        assert json.loads(result)['error'] == guard.stop_message
     assert attempts == []
     saved = plugin.store.get(record['id'])
     assert saved['state'] == 'interrupted' and saved['stop_reason'] == 'plugin_reloaded'

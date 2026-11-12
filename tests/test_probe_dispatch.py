@@ -22,15 +22,26 @@ def hermes_dispatch(tmp_path, monkeypatch):
     plugins = importlib.import_module('hermes_cli.plugins')
     middleware = importlib.import_module('hermes_cli.middleware')
     executor = importlib.import_module('agent.tool_executor')
-    lifecycle = importlib.import_module('hermes_cli.lifecycle')
     manager = plugins.PluginManager(scope_key=str(tmp_path / 'hermes-home'))
-    monkeypatch.setattr(plugins, '_delivery_manager', lambda: manager)
-    monkeypatch.setattr(plugins, '_resolve_hook_callback_timeout', lambda: 0)
-    monkeypatch.setattr(lifecycle, '_observe', lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(plugins, 'get_plugin_manager', lambda: manager)
+    monkeypatch.setattr(manager, 'discover_and_load', lambda: None)
+    monkeypatch.setattr(plugins, 'load_config_readonly',
+                        lambda: {'plugins': {'hook_callback_timeout': 0}})
+    from types import ModuleType
+    observers = ModuleType('hermes_cli.observability')
+    observers.observe_lifecycle = lambda *args, **kwargs: None
+    observers.handles_hook = lambda *args: False
+    monkeypatch.setitem(sys.modules, 'hermes_cli.observability', observers)
+    from hermes_cli.plugins_context import PluginContext
+    from hermes_cli.plugins_manifest import PluginManifest
+    context = PluginContext(PluginManifest(name='shadow'), manager)
+    registrations = []
 
     def register(guard):
-        manager._hooks['pre_tool_call'] = [guard.pre_tool_call]
-        manager._middleware['tool_execution'] = [guard.tool_execution]
+        for registration in registrations:
+            registration.dispose()
+        registrations[:] = [context.register_hook('pre_tool_call', guard.pre_tool_call),
+                            context.register_middleware('tool_execution', guard.tool_execution)]
         return manager
 
     try:
@@ -65,7 +76,7 @@ def dispatch_case(tmp_path, hermes_dispatch=None):
     return guard, tokens
 
 
-def test_registered_dispatch_proves_independent_layers(tmp_path):
+def test_guard_callbacks_prove_independent_layers(tmp_path):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
     guard, tokens = dispatch_case(tmp_path)
