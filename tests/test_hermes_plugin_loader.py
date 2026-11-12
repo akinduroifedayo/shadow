@@ -97,7 +97,7 @@ def _install_host(monkeypatch, home: Path) -> None:
     )
     modules = {name: ModuleType(name) for name in names}
     modules["hermes_constants"].get_hermes_home = lambda: str(home)
-    modules["hermes_cli.config"].read_config_doc = lambda _path: {}
+    modules["hermes_cli.config"].read_raw_config_readonly = lambda: {}
     modules["hermes_cli.config"].load_config_readonly = lambda: {}
     modules["plugins.plugin_storage"].plugin_db = lambda *_args: sqlite3.connect(":memory:")
     modules["plugins.plugin_storage"].plugin_data_dir = lambda _name: home
