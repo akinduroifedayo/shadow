@@ -610,15 +610,17 @@ def launch_setup(launcher, job, *, timeout=120, pause=time.sleep, killer=None):
         except (OSError, ValueError, sqlite3.Error, ImportError):
             return {'passed': False, 'unchanged': False}
         after = profile_snapshot(job['home'])
-        if not same_profile(before, after):
-            if result is None:
-                return {'passed': False, 'unchanged': False, 'timed_out': True}
+        unchanged = same_profile(before, after)
+        if result is None:
+            from .probe_gateway import missing_setup_result
+            missing = missing_setup_result(job['home'], job['profile'])
+            if not unchanged:
+                missing['unchanged'] = False
+            return missing
+        if not unchanged:
             return {'passed': False, 'unchanged': False}
         if not isinstance(result, dict) or result.get('passed') is not True:
-            if result is not None:
-                return result
-            from .probe_gateway import missing_setup_result
-            return missing_setup_result(job['home'], job['profile'])
+            return result
         if (not all(result.get(name) is True for name in (*CHECK_NAMES, 'model'))
                 or len(owned) < 2 or set(result.get('sessions', ())) != set(owned)
                 or identity.profile != job['profile'] or launcher.identity != identity):

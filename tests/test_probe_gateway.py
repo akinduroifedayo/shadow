@@ -40,17 +40,31 @@ def test_absent_gateway_keeps_timeout(monkeypatch):
     assert missing_setup_result('/profile', 'demo') == {'passed': False, 'timed_out': True}
 
 
-def test_setup_without_hooks_uses_gateway_hint_after_launch(tmp_path, monkeypatch, gateway_home):
+@pytest.mark.parametrize('profile,command', [('default', 'hermes gateway restart'),
+                                            ('demo', 'hermes -p demo gateway restart')])
+@pytest.mark.parametrize('saved_session', [False, True])
+def test_setup_without_hooks_uses_gateway_hint_after_launch(tmp_path, monkeypatch, gateway_home, profile, command, saved_session):
+    from test_probe_cleanup import _sessions
+
     _, plugin = _plugin(tmp_path)
     job = _job(tmp_path)
+    job['profile'] = profile
     launched = []
-    plugin.launcher.popen = lambda *args, **kwargs: launched.append(args) or SimpleNamespace()
+    def launch(*args, **kwargs):
+        launched.append(args)
+        if saved_session:
+            _sessions(Path(job['home']), ['unguarded-setup'])
+        return SimpleNamespace()
+    plugin.launcher.popen = launch
     monkeypatch.setattr(probe, 'wait_for_result', lambda *args, **kwargs: None)
     monkeypatch.setitem(sys.modules, 'hermes_cli.gateway_runtime',
                         SimpleNamespace(discover_gateway_endpoint=lambda home: SimpleNamespace(state='ready')))
     result = probe.launch_setup(plugin.launcher, job, killer=lambda _: None)
     assert len(launched) == 1
     assert result['reason_code'] == 'gateway_restart_needed'
+    assert result.get('unchanged', True) is not saved_session
+    assert command in probe.failure_text(result)
+    assert ('unguarded-setup' in probe.session_fingerprints(job['home'])) is saved_session
     assert plugin.launcher.isolation_verified is False
 
 
