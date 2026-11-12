@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from shadow.common.copy import load_copy
-from shadow.common.discovery import ModelCatalog, ModelUnavailable, discover_models
+from shadow.common.discovery import ModelCatalog, ModelUnavailable, _local_context, discover_models
 from shadow.common.models import Model
 
 
@@ -351,6 +351,28 @@ def test_discovery_failure_is_reported_without_a_model_guess(hermes_profile, mon
     with pytest.raises(ModelUnavailable) as error:
         discover_models().resolve('future/ember')
     assert error.value.code == 'discovery_unavailable'
+    assert 'private-exception-canary' not in str(error.value)
+
+
+@pytest.mark.parametrize('fallback', [{}, {'model': {'provider': 'openrouter', 'default': 'future/aurora'}}])
+def test_failed_raw_config_read_refuses_discovery(hermes_profile, monkeypatch, fallback):
+    class FailedConfigRead(dict):
+        read_error = ValueError('private-exception-canary')
+
+    config = ModuleType('hermes_cli.config')
+    config.read_raw_config_readonly = lambda: FailedConfigRead(fallback)
+    providers = ModuleType('hermes_cli.config_providers')
+    providers.coerce_provider_id = lambda value: value or ''
+    providers.stringify_provider_map = lambda value: value or {}
+    hermes_profile.inventory.ConfigContext = SimpleNamespace
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', config)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config_providers', providers)
+    monkeypatch.setattr('shadow.common.discovery._local_context', _local_context)
+    catalog = discover_models()
+    assert catalog.failure == 'discovery_unavailable'
+    assert not catalog.candidates
+    with pytest.raises(ModelUnavailable) as error:
+        catalog.resolve('future/aurora')
     assert 'private-exception-canary' not in str(error.value)
 
 

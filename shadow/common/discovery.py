@@ -145,7 +145,10 @@ def _local_context():
     from hermes_cli.inventory import ConfigContext
 
     # load_picker_context expands credential references throughout the config.
-    config = read_raw_config_readonly() or {}
+    config = read_raw_config_readonly()
+    if getattr(config, 'read_error', None):
+        raise ValueError('profile config could not be read')
+    config = config or {}
     model = config.get('model', {})
     if isinstance(model, str):
         model = {'default': model}
