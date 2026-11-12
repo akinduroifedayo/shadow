@@ -125,7 +125,8 @@ def test_doctor_explains_missing_runtime_registry_without_writing_config():
     before = copy.deepcopy(config)
     text = doctor(config)
     assert "plugins.entries.shadow.settings.verified_gradual_pairs" in text
-    assert "runtime" in text
+    assert "completion proof" in text
+    assert "fails closed when sealed reasoning is required" in text
     assert config == before
 
 

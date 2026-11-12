@@ -253,7 +253,7 @@ class Engine:
         return record.turns.get(turn_key(event["session_id"], event["task_id"], event["turn_id"]))
 
     def _guard_sealed_history(self, record, turn, request, original):
-        from .pair_probe import _encrypted_blobs
+        from .reasoning import _encrypted_blobs
 
         if (original == record.old and not turn.sent and turn.target == "new" and any(_encrypted_blobs(request))
                 and not self.verified_sealed_pair(record.old, record.new)):

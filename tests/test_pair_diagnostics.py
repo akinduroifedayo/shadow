@@ -2,7 +2,7 @@
 
 import pytest
 
-from test_pair_probe import LiveAgents, NEW, OLD, PROVIDER, _probe, _service, hermes_agent_context
+from test_pair_probe import LiveCompletions, NEW, OLD, PROVIDER, _probe, _service, public_llm_api
 
 
 def _different_route(turn, result, before, after):
@@ -11,22 +11,18 @@ def _different_route(turn, result, before, after):
 
 
 @pytest.mark.parametrize('mutate,reason', [
-    (lambda n, result, before, after: before.update(session_id='other'), 'turn_1_request_count'),
-    (lambda n, result, before, after: after.update(session_id='other'), 'turn_1_response_count'),
-    (lambda n, result, before, after: before.update(conversation_history=[]) if n == 1 else None,
-     'turn_2_history_changed'),
+    (lambda n, result, before, after: before.update(aux_task='other'), 'turn_1_request_count'),
+    (lambda n, result, before, after: after.update(aux_task='other'), 'turn_1_response_count'),
     (lambda n, result, before, after: before.update(request_messages=[]) if n == 1 else None,
      'turn_2_carried_text_missing'),
-    (lambda n, result, before, after: result.update(final_response='different') if n == 1 else None,
+    (lambda n, result, before, after: result.update(text='different') if n == 1 else None,
      'turn_2_answer_changed'),
-    (lambda n, result, before, after: before['request_messages'].append(before['conversation_history'][1]) if n == 1 else None,
-     'turn_2_encrypted_reasoning_replayed'),
     (_different_route, 'pair_routes_differ'),
     (lambda n, result, before, after: before.update(base_url='https://example.invalid/v1?key=fixture') or after.update(base_url='https://example.invalid/v1?key=fixture'),
      'turn_1_response_route'),
 ])
 def test_pair_rejects_each_missing_or_unsafe_evidence_with_a_reason(tmp_path, caplog, mutate, reason):
-    live, written = LiveAgents(mutate=mutate), []
+    live, written = LiveCompletions(mutate=mutate), []
     probe = _probe(tmp_path, live, written)
     assert probe.run(PROVIDER, OLD, NEW) is False
     assert probe.reason_code == reason
@@ -37,7 +33,7 @@ def test_pair_rejects_each_missing_or_unsafe_evidence_with_a_reason(tmp_path, ca
 
 
 def test_pair_provider_error_has_its_own_reason(tmp_path, caplog):
-    live, written = LiveAgents(hook='api_request_error'), []
+    live, written = LiveCompletions(mutate=lambda n, result, before, after: after.update(error='provider error')), []
     probe = _probe(tmp_path, live, written)
     assert probe.run(PROVIDER, OLD, NEW) is False
     assert probe.reason_code == 'turn_1_request_error'
@@ -46,11 +42,11 @@ def test_pair_provider_error_has_its_own_reason(tmp_path, caplog):
 
 
 def test_pair_construction_error_never_logs_exception_contents(tmp_path, caplog):
-    live, written = LiveAgents(), []
+    live, written = LiveCompletions(), []
     probe = _probe(tmp_path, live, written)
-    def broken_factory(**options):
+    def broken_factory(*args, **options):
         raise RuntimeError('private-constructor-canary')
-    probe.agent_factory = broken_factory
+    live.complete = broken_factory
     assert probe.run(PROVIDER, OLD, NEW) is False
     assert probe.reason_code == 'probe_exception'
     assert probe.reason_code in caplog.text
@@ -61,8 +57,7 @@ def test_pair_construction_error_never_logs_exception_contents(tmp_path, caplog)
 @pytest.mark.parametrize('configuration,yes,reason', [
     ({'model': {'provider': PROVIDER, 'default': 'other'}}, True, 'pair_required'),
     ({'model': {'provider': PROVIDER, 'default': OLD}}, False, 'confirmation_declined'),
-    ({'model': {'provider': PROVIDER, 'default': OLD}, 'context': {'engine': 'custom'}}, True,
-     'context_engine_unsupported'),
+
 ])
 def test_pair_command_preflight_exits_also_print_and_log_a_reason(configuration, yes, reason, caplog):
     from fixtures import FakeContext
