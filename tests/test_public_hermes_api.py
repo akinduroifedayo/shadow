@@ -28,12 +28,15 @@ def scan(source, filename='<snippet>'):
                 bindings[alias.asname or alias.name.split('.')[0]] = alias.name if alias.asname else alias.name.split('.')[0]
                 if not (alias.name == 'shadow' or alias.name.startswith('shadow.')):
                     external.add(alias.asname or alias.name.split('.')[0])
-                    if alias.name.split('.')[0].startswith('_'):
+                    if any(part.startswith('_') for part in alias.name.split('.')):
                         report(node, f'private import {alias.name}')
-        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module != '__future__':
             module = node.module or ''
             if banned(module):
                 report(node, f'banned module {module}')
+            if not (module == 'shadow' or module.startswith('shadow.')):
+                if any(part.startswith('_') for part in module.split('.')):
+                    report(node, f'private import {module}')
             for alias in node.names:
                 if alias.name in BANNED_NAMES:
                     report(node, f'banned name {alias.name}')
@@ -63,6 +66,21 @@ def scan(source, filename='<snippet>'):
 
     def private(name):
         return name.startswith('_') and not (name.startswith('__') and name.endswith('__'))
+
+    while True:
+        inferred = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                targets, value = node.targets, node.value
+            elif isinstance(node, ast.AnnAssign):
+                targets, value = [node.target], node.value
+            else:
+                continue
+            if imported_root(value):
+                inferred.update(target.id for target in targets if isinstance(target, ast.Name))
+        if inferred <= external:
+            break
+        external.update(inferred)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and banned(node.value):
@@ -110,7 +128,8 @@ from shadow.internal import _private
 
 
 def test_scanner_allows_shadow_private_names_and_dunders():
-    assert scan('''from .internal import _helper
+    assert scan('''from __future__ import annotations
+from .internal import _helper
 import os
 class Example:
     def run(self):
@@ -124,9 +143,23 @@ def test_scanner_bans_backend_reexports_from_any_module():
         assert scan(f'import another_module as config; config.{name}()')
 
 
+def test_scanner_catches_private_dotted_module_segments():
+    for source in [
+        'from hermes_cli._parser import build_parser',
+        'import hermes_cli._parser as parser',
+        'from hermes_cli._internal.parser import build_parser',
+    ]:
+        assert scan(source), source
+    assert scan('import shadow._internal\nfrom shadow._internal import helper') == []
+
+
 def test_scanner_catches_call_subscript_and_context_roots():
     expressions = [
         "get_plugin_manager()._hooks",
+        "pm = get_plugin_manager(); pm._hooks",
+        "pm: object = registry.profile; pm._hooks",
+        "profiles = registry.profiles; profile = profiles['x']; profile._secret",
+        "pm = get_plugin_manager(); alias = pm; getattr(alias, '_hooks')",
         "sys.modules['x']._y",
         "sys.modules.get('x')._y",
         "importlib.import_module('agent.model_metadata')._z",
