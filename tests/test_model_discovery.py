@@ -12,15 +12,13 @@ from shadow.common.models import Model
 def hermes_profile(monkeypatch):
     configs = {
         'openrouter': {'models': ['future/aurora', 'future/ember'], 'key_env': 'SHADOW_TEST_ROUTER_KEY'},
-        'deepseek': {'models': ['deepseek-chat']},
+        'deepseek': {'models': ['deepseek-chat'], 'key_env': 'SHADOW_TEST_DEEPSEEK_KEY'},
     }
     context = SimpleNamespace(current_provider='openrouter', current_model='future/aurora',
                               user_providers=configs, custom_providers=[], excluded_providers=[])
     monkeypatch.setattr('shadow.common.discovery._local_context', lambda: context)
     inventory = ModuleType('hermes_cli.inventory')
     inventory.load_picker_context = lambda: context
-    backend = ModuleType('hermes_cli.config_backend')
-    backend._BOOTSTRAPPED = True
     def forbidden(*args, **kwargs):
         pytest.fail('discovery called a credential resolver or refresh-capable inventory')
     inventory.build_models_payload = forbidden
@@ -29,18 +27,8 @@ def hermes_profile(monkeypatch):
     auth.resolve_codex_runtime_credentials = forbidden
     runtime = ModuleType('hermes_cli.runtime_provider')
     runtime.resolve_runtime_provider = forbidden
-    providers = ModuleType('providers')
-    profiles = {'openrouter': SimpleNamespace(env_vars=('SHADOW_TEST_ROUTER_KEY',), auth_type='api_key',
-                                             aliases=(), models_dev_id=''),
-                'deepseek': SimpleNamespace(env_vars=('SHADOW_TEST_DEEPSEEK_KEY',), auth_type='api_key',
-                                           aliases=(), models_dev_id='')}
-    providers.get_provider_profile = profiles.get
-    providers._REGISTRY = profiles
-    home_profiles = {}
-    providers._ALIASES = {}
-    providers._bound_home_layer = lambda: (SimpleNamespace(registry=home_profiles, aliases={}), None, '')
     metadata = ModuleType('agent.models_dev')
-    metadata.PROVIDER_TO_MODELS_DEV = {}
+    metadata.PROVIDER_TO_MODELS_DEV = {'openrouter': 'openrouter', 'deepseek': 'deepseek', 'openai-codex': 'openai'}
     metadata.get_model_capabilities = lambda *args, **kwargs: SimpleNamespace(supports_reasoning=None)
     calls = []
     data = {}
@@ -68,24 +56,24 @@ def hermes_profile(monkeypatch):
     routes.custom_provider_aliases = lambda name, key='': {name.lower(), key.lower(), slug(name, key)} - {''}
     monkeypatch.setenv('SHADOW_TEST_ROUTER_KEY', 'fixture-value')
     for name, module in [('hermes_cli.inventory', inventory), ('hermes_cli.auth', auth),
-                         ('hermes_cli.runtime_provider', runtime), ('providers', providers),
-                         ('hermes_cli.config_backend', backend),
+                         ('hermes_cli.runtime_provider', runtime),
                          ('agent.models_dev', metadata), ('hermes_cli.providers', routes),
                          ('agent.secret_scope', scope),
                          ('hermes_cli.local_runtime.bootstrap', local)]:
         monkeypatch.setitem(sys.modules, name, module)
-    return SimpleNamespace(context=context, configs=configs, calls=calls, data=data, profiles=profiles,
+    return SimpleNamespace(context=context, configs=configs, calls=calls, data=data,
                            inventory=inventory, local=local, runtime=runtime, auth=auth,
-                           home_profiles=home_profiles, scope=scope, constants=constants)
+                           scope=scope, constants=constants)
 
 
-def test_profile_override_owns_its_credential_presence(hermes_profile, monkeypatch):
-    hermes_profile.home_profiles['openrouter'] = SimpleNamespace(
-        env_vars=('SHADOW_TEST_HOME_KEY',), auth_type='api_key', aliases=(), models_dev_id='openrouter')
-    hermes_profile.configs['openrouter'].pop('key_env')
-    hermes_profile.data['openrouter'] = {'env': ['SHADOW_TEST_ROUTER_KEY'], 'models': {}}
-    assert discover_models().candidates == []
-    monkeypatch.setenv('SHADOW_TEST_HOME_KEY', 'fixture-value')
+def test_provider_plugin_metadata_is_not_loaded_for_discovery(hermes_profile, monkeypatch):
+    providers = ModuleType('providers')
+    def forbidden(*args, **kwargs):
+        pytest.fail('provider discovery could load plugins')
+    providers.get_provider_profile = forbidden
+    providers.list_providers = forbidden
+    providers.bound_profile_resolver = forbidden
+    monkeypatch.setitem(sys.modules, 'providers', providers)
     assert len(discover_models().candidates) == 2
 
 
@@ -97,10 +85,9 @@ def test_profile_inventory_is_the_candidate_source(hermes_profile):
     assert hermes_profile.calls == [False]
 
 
-def test_discovery_never_initiates_hermes_dotenv_bootstrap(hermes_profile):
-    sys.modules['hermes_cli.config_backend']._BOOTSTRAPPED = False
-    hermes_profile.inventory.load_picker_context = lambda: pytest.fail('dotenv bootstrap initiated')
-    assert discover_models().failure == 'discovery_unavailable'
+def test_discovery_does_not_use_the_picker_that_expands_credentials(hermes_profile):
+    hermes_profile.inventory.load_picker_context = lambda: pytest.fail('picker read')
+    assert len(discover_models().candidates) == 2
 
 
 def test_discovery_never_reads_a_nonlocal_config_backend(hermes_profile, monkeypatch):
@@ -161,8 +148,6 @@ def test_environment_credential_values_are_not_read(hermes_profile, monkeypatch)
 @pytest.fixture
 def codex_profile(hermes_profile):
     hermes_profile.configs['openai-codex'] = {'models': ['gpt-future']}
-    hermes_profile.profiles['openai-codex'] = SimpleNamespace(
-        env_vars=(), auth_type='oauth_external', aliases=(), models_dev_id='openai')
     return hermes_profile
 
 
@@ -255,7 +240,6 @@ def test_config_booleans_alone_do_not_prove_credentials(hermes_profile, monkeypa
 def test_base_url_presence_does_not_authenticate_a_provider(hermes_profile, monkeypatch):
     monkeypatch.delenv('SHADOW_TEST_ROUTER_KEY')
     monkeypatch.setenv('SHADOW_ROUTER_BASE_URL', 'https://unused.invalid')
-    hermes_profile.profiles['openrouter'].env_vars = ('SHADOW_ROUTER_BASE_URL',)
     assert discover_models().candidates == []
 
 
@@ -338,8 +322,6 @@ def test_discovery_copy_is_in_the_three_line_copy_table():
 
 def test_api_key_metadata_does_not_authenticate_an_oauth_route(hermes_profile, monkeypatch):
     hermes_profile.configs['openai-codex'] = {'models': ['gpt-future']}
-    hermes_profile.profiles['openai-codex'] = SimpleNamespace(
-        env_vars=(), auth_type='oauth_external', aliases=(), models_dev_id='openai')
     hermes_profile.data['openai'] = {'env': ['SHADOW_TEST_OPENAI_KEY'], 'models': {}}
     monkeypatch.setenv('SHADOW_TEST_OPENAI_KEY', 'fixture-value')
     with pytest.raises(ModelUnavailable) as error:

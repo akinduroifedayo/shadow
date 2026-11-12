@@ -1,5 +1,4 @@
 import sys
-from decimal import Decimal
 from types import ModuleType
 
 import pytest
@@ -24,17 +23,8 @@ def cached_catalog(monkeypatch):
         return catalog if provider == 'openrouter' else {}
 
     pricing.get_pricing_for_provider = lookup
-    agent = ModuleType('agent')
-    agent.__path__ = []
-    metadata = ModuleType('agent.model_metadata')
-    metadata._model_metadata_cache = {}
-    metadata._load_model_metadata_disk_cache = lambda: {
-        model: {'pricing': {'request': '0'}} for model in catalog
-    }
     monkeypatch.setitem(sys.modules, 'hermes_cli', package)
     monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', pricing)
-    monkeypatch.setitem(sys.modules, 'agent', agent)
-    monkeypatch.setitem(sys.modules, 'agent.model_metadata', metadata)
     return catalog
 
 
@@ -77,13 +67,11 @@ def test_known_context_tier_cannot_start_from_flat_openrouter_rates(
     assert not ctx.subagent_lifecycle.launches and not ctx.llm.calls
 
 
-def test_verified_flat_openrouter_model_can_start(tmp_path, cached_catalog):
+def test_flat_openrouter_model_without_public_request_fee_cannot_start(tmp_path, cached_catalog):
     model, ctx, engine, record = prepare_catalog_trial(
         tmp_path, cached_catalog, 'nousresearch/hermes-3-llama-3.1-405b')
-
-    assert record['can_start']
-    assert record['estimate']['total'] > 0
-    assert '[Start]' in render_start(record, isolation_verified=True)
-    assert price_for(model).cost(1000, 100) == Decimal('0.0026')
-    engine.attach(record, 'controller')
+    assert not record['can_start']
+    assert record['estimate']['total'] is None
+    assert price_for(model) is None
+    assert '[Start]' not in render_start(record, isolation_verified=True)
     assert not ctx.subagent_lifecycle.launches and not ctx.llm.calls

@@ -1,11 +1,11 @@
-import sys
 from collections import Counter
-from types import ModuleType
+from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from fixtures import OUTSIDE, FakeContext, selection
-from shadow.common.models import Model
+from shadow.common.models import Model, Price
 from shadow.common.storage import Store
 from shadow.trial.cards import render_start
 from shadow.trial.engine import TrialEngine
@@ -21,24 +21,22 @@ def pricing(monkeypatch):
     calls = []
     catalog = {model.model: {'prompt': '0.000002', 'completion': '0.000006', 'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
                for model in (CURRENT, TRIAL, OUTSIDE)}
-    package = ModuleType('hermes_cli')
-    package.__path__ = []
-    module = ModuleType('hermes_cli.models_pricing')
+    module = SimpleNamespace(request_fees={})
 
     def lookup(provider, **kwargs):
         calls.append(provider)
         return catalog if provider == 'openrouter' else {}
 
     module.get_pricing_for_provider = lookup
-    agent = ModuleType('agent')
-    agent.__path__ = []
-    metadata = ModuleType('agent.model_metadata')
-    metadata._model_metadata_cache = {name: {'pricing': {'request': '0'}} for name in catalog}
-    metadata._load_model_metadata_disk_cache = lambda: {}
-    monkeypatch.setitem(sys.modules, 'agent', agent)
-    monkeypatch.setitem(sys.modules, 'agent.model_metadata', metadata)
-    monkeypatch.setitem(sys.modules, 'hermes_cli', package)
-    monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', module)
+    def known_price(model):
+        row = module.get_pricing_for_provider(model.provider, cached_only=True).get(model.model)
+        if not row:
+            return None
+        return Price(*(Decimal(row[key]) * 1_000_000 for key in
+                       ('prompt', 'completion', 'input_cache_read', 'input_cache_write')),
+                     plan=model.plan, request_cost=Decimal(module.request_fees.get(model.model, '0')))
+
+    monkeypatch.setattr('shadow.trial.usage.price_for', known_price)
     return module, catalog, calls
 
 

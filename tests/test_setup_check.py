@@ -336,7 +336,9 @@ def test_setup_child_wait_reserves_hook_cleanup_time(tmp_path, monkeypatch, herm
 
     monkeypatch.setattr(probe.time, 'monotonic', lambda: clock[0])
     monkeypatch.setattr(probe, 'profile_snapshot', slow_snapshot)
-    monkeypatch.setattr(hermes_dispatch.plugins, '_resolve_hook_callback_timeout', lambda: hook_timeout)
+    from hermes_cli import config
+    monkeypatch.setattr(config, 'load_config_readonly',
+                        lambda: {'plugins': {'hook_callback_timeout': hook_timeout}})
     ctx.subagent_lifecycle = _Life(ctx)
     wait = ctx.subagent_lifecycle.wait
     budgets = []

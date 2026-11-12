@@ -155,21 +155,8 @@ _CONTEXT_TIERED_MODELS = frozenset({
 
 
 def _openrouter_request_fee(model_id):
-    try:
-        from agent import model_metadata
-        metadata = getattr(model_metadata, '_model_metadata_cache', {})
-        if not isinstance(metadata, dict) or model_id not in metadata:
-            metadata = model_metadata._load_model_metadata_disk_cache()
-        row = metadata.get(model_id) if isinstance(metadata, dict) else None
-        pricing = row.get('pricing') if isinstance(row, dict) else None
-        if not isinstance(pricing, dict):
-            return None
-        if 'request' not in pricing:
-            return Decimal(0)
-        fee = Decimal(str(pricing['request']))
-        return fee if fee.is_finite() and fee >= 0 and math.isfinite(fee) else None
-    except Exception:
-        return None
+    # Hermes has no public cache-only reader for per-request fees.
+    return None
 
 
 def price_for(model):

@@ -1,5 +1,4 @@
 import json
-import sys
 
 import pytest
 
@@ -14,14 +13,9 @@ from test_trial_pricing_snapshot import CURRENT, TRIAL, fail_lookup, prepared_en
 
 
 @pytest.mark.parametrize('model,requests', [(CURRENT, 142), (TRIAL, 80), (OUTSIDE, 40)])
-@pytest.mark.parametrize('source', ['memory', 'disk'])
-def test_start_estimate_includes_cached_request_fees(tmp_path, pricing, model, requests, source):
+def test_start_estimate_includes_known_request_fees(tmp_path, pricing, model, requests):
     _, _, baseline = prepared_engine(tmp_path, pricing)
-    module = sys.modules['agent.model_metadata']
-    metadata = dict(module._model_metadata_cache)
-    metadata[model.model] = {'pricing': {'request': '0.01'}}
-    module._model_metadata_cache = metadata if source == 'memory' else {}
-    module._load_model_metadata_disk_cache = lambda: metadata
+    pricing[0].request_fees[model.model] = '0.01'
 
     _, engine, record = prepared_engine(tmp_path, pricing)
 
@@ -35,7 +29,7 @@ def test_start_estimate_includes_cached_request_fees(tmp_path, pricing, model, r
 
 @pytest.mark.parametrize('model', [CURRENT, TRIAL, OUTSIDE])
 def test_request_fees_can_put_start_over_the_cap(tmp_path, pricing, model):
-    sys.modules['agent.model_metadata']._model_metadata_cache[model.model]['pricing']['request'] = '0.2'
+    pricing[0].request_fees[model.model] = '0.2'
 
     _, _, record = prepared_engine(tmp_path, pricing)
 
@@ -47,13 +41,13 @@ def test_request_fees_can_put_start_over_the_cap(tmp_path, pricing, model):
 
 
 def test_frozen_fees_reach_cli_and_desktop_verdict_costs(tmp_path, pricing):
-    metadata = sys.modules['agent.model_metadata']._model_metadata_cache
+    fees = pricing[0].request_fees
     for model, fee in ((CURRENT, '0.001'), (TRIAL, '0.002'), (OUTSIDE, '0.003')):
-        metadata[model.model]['pricing']['request'] = fee
+        fees[model.model] = fee
     ctx, engine, record = prepared_engine(tmp_path, pricing)
     assert record['can_start']
     frozen = engine.store.get(record['id'])
-    metadata.clear()
+    fees.clear()
     fail_lookup(pricing[0])
     engine.attach(frozen, 'controller')
     for _ in range(100):
@@ -74,7 +68,7 @@ def test_frozen_fees_reach_cli_and_desktop_verdict_costs(tmp_path, pricing):
 
 
 def test_request_fee_is_charged_once_per_request_across_hook_updates_and_reload(tmp_path, pricing):
-    sys.modules['agent.model_metadata']._model_metadata_cache[CURRENT.model]['pricing']['request'] = '0.01'
+    pricing[0].request_fees[CURRENT.model] = '0.01'
     _, engine, record = prepared_engine(tmp_path, pricing)
     assert record['can_start']
     engine.attach(record, 'controller')
@@ -93,7 +87,7 @@ def test_request_fee_is_charged_once_per_request_across_hook_updates_and_reload(
 
 
 def test_request_fee_trips_runtime_cap_before_another_replay(tmp_path, pricing):
-    sys.modules['agent.model_metadata']._model_metadata_cache[CURRENT.model]['pricing']['request'] = '0.01'
+    pricing[0].request_fees[CURRENT.model] = '0.01'
     ctx, engine, record = prepared_engine(tmp_path, pricing)
     assert record['can_start']
     engine.attach(record, 'controller')
@@ -118,7 +112,7 @@ def test_desktop_start_cost_includes_request_fees(tmp_path, pricing):
     plugin.catalog = [CURRENT, TRIAL, Model('openrouter', OUTSIDE.model)]
     source = ProfileSource(plugin)
     baseline = source.start_facts(TRIAL.model)
-    sys.modules['agent.model_metadata']._model_metadata_cache[CURRENT.model]['pricing']['request'] = '0.001'
+    pricing[0].request_fees[CURRENT.model] = '0.001'
 
     facts = source.start_facts(TRIAL.model)
     card = build_start(Copy(load_copy()), source, TRIAL.model)

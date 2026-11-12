@@ -112,16 +112,14 @@ def _declared_models(value):
     return names
 
 
-def _credential_reason(provider, config, profile, metadata, environment_names):
+def _credential_reason(provider, config, metadata, environment_names):
     env_names = [config.get('key_env'), config.get('api_key_env')]
     raw_key = config.get('api_key')
     if isinstance(raw_key, str):
         reference = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', raw_key)
         if reference:
             env_names.append(reference[1])
-    if profile is not None and getattr(profile, 'auth_type', '') == 'api_key':
-        env_names.extend(getattr(profile, 'env_vars', ()))
-    if metadata is not None and profile is None:
+    if metadata is not None:
         env_names.extend(name for name in metadata.get('env') or []
                          if isinstance(name, str) and name.endswith(('_KEY', '_TOKEN')))
     if any(isinstance(name, str) and not name.endswith(('_URL', '_BASE_URL'))
@@ -161,20 +159,15 @@ def _local_context():
 def discover_models(*, live_providers=frozenset()):
     current = Model('', '')
     try:
-        from hermes_cli.config_backend import _BOOTSTRAPPED
-
-        # A first config read bootstraps dotenv; remote backends may perform network I/O.
-        if not _BOOTSTRAPPED or os.environ.get('HERMES_CONFIG_BACKEND', 'file') not in ('', 'file'):
+        if os.environ.get('HERMES_CONFIG_BACKEND', 'file') not in ('', 'file'):
             return ModelCatalog(current, [], failure='discovery_unavailable')
         from agent.models_dev import PROVIDER_TO_MODELS_DEV, fetch_models_dev
         from agent.secret_scope import current_secret_scope, serves_routed_profile
         from hermes_cli.local_runtime.bootstrap import staged_model_ids
         from hermes_cli.providers import (LLAMACPP_ALIASES, LLAMACPP_PROVIDER_ID,
                                           custom_provider_aliases, custom_provider_slug)
-        from providers import _ALIASES, _REGISTRY, _bound_home_layer
 
         context = _local_context()
-        layer = _bound_home_layer()[0]
         current = Model(context.current_provider, context.current_model)
         metadata = fetch_models_dev(allow_network=False)
         scope = current_secret_scope()
@@ -204,30 +197,25 @@ def discover_models(*, live_providers=frozenset()):
         for provider, config in configs.items():
             if not isinstance(config, dict) or config.get('enabled') is False or provider in excluded:
                 continue
-            # Registry lookups can import plugins that load dotenv; use only registered metadata.
-            canonical = layer.aliases.get(provider) or _ALIASES.get(provider, provider)
-            profile = layer.registry.get(canonical) or _REGISTRY.get(canonical)
             provider_aliases = custom_provider_aliases(config.get('name', provider), provider)
-            if profile is not None:
-                provider_aliases = set(provider_aliases) | set(getattr(profile, 'aliases', ()))
             aliases.update({alias: provider for alias in provider_aliases})
             if current.provider == provider or current.provider in provider_aliases:
                 current = Model(provider, current.model)
-            metadata_id = getattr(profile, 'models_dev_id', '') or PROVIDER_TO_MODELS_DEV.get(provider, provider)
+            metadata_id = PROVIDER_TO_MODELS_DEV.get(provider, provider)
             cached = metadata.get(metadata_id) or {}
             names = (_declared_models(config.get('model') or config.get('default_model'))
                      + _declared_models(config.get('models')))
-            if profile is not None or provider in PROVIDER_TO_MODELS_DEV:
+            if provider in PROVIDER_TO_MODELS_DEV:
                 names += _declared_models(cached.get('models'))
             if current.provider == provider and current.model:
                 names = [current.model, *names]
             credential_metadata = cached if metadata_id == provider else None
-            observed = live_providers.intersection({provider, canonical, *provider_aliases})
-            reason = None if observed else _credential_reason(canonical, config, profile, credential_metadata, environment_names)
+            observed = live_providers.intersection({provider, *provider_aliases})
+            reason = None if observed else _credential_reason(provider, config, credential_metadata, environment_names)
             for name in names:
                 identity = provider, name
                 models[identity] = Model(
-                    provider, name, plan=subscription_included(Model(canonical, name)), reachable=reason is None)
+                    provider, name, plan=subscription_included(Model(provider, name)), reachable=reason is None)
                 if reason:
                     reasons[identity] = reason
         if LLAMACPP_PROVIDER_ID not in excluded:

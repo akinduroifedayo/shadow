@@ -36,6 +36,19 @@ DETAIL = {
 }
 
 
+def hook_callback_timeout():
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        plugins = (load_config_readonly() or {}).get('plugins')
+        if not isinstance(plugins, dict) or plugins.get('hook_callback_timeout') is None:
+            return 30.0
+        timeout = float(plugins['hook_callback_timeout'])
+        return 30.0 if timeout < 0 else min(timeout, 600.0)
+    except Exception:
+        return 30.0
+
+
 def active_home():
     try:
         from hermes_constants import get_hermes_home
@@ -299,9 +312,7 @@ class SetupProbe:
             self.calls.append({'session_id': session_id, 'model': response_model or '', 'provider': provider})
 
     def run(self):
-        from hermes_cli.plugins import _resolve_hook_callback_timeout
-
-        hook_timeout = _resolve_hook_callback_timeout()
+        hook_timeout = hook_callback_timeout()
         deadline = time.monotonic() + hook_timeout - 3 if hook_timeout > 0 else None
         plugin, job = self.plugin, self.job
         home = Path(job['home'])
