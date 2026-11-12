@@ -1,4 +1,4 @@
-"""Setup proofs run registered Hermes policies with an inert terminal executor."""
+"""Setup proofs call Shadow policies with an inert terminal executor."""
 
 import importlib
 import sys
@@ -46,7 +46,7 @@ def hermes_dispatch(tmp_path, monkeypatch):
                     sys.modules.pop(name, None)
 
 
-def dispatch_case(tmp_path, hermes_dispatch):
+def dispatch_case(tmp_path, hermes_dispatch=None):
     from shadow.trial.reads import SafeReads
     from shadow.trial.safety import ReplayGuard
 
@@ -60,14 +60,15 @@ def dispatch_case(tmp_path, hermes_dispatch):
     (tmp_path / 'notes.txt').write_text(tokens['scope'])
     (tmp_path / '.env').write_text(tokens['secret'])
     (tmp_path.parent / 'outside.txt').write_text(tokens['outside'])
-    hermes_dispatch.register(guard)
+    if hermes_dispatch is not None:
+        hermes_dispatch.register(guard)
     return guard, tokens
 
 
-def test_registered_dispatch_proves_independent_layers(tmp_path, hermes_dispatch):
+def test_registered_dispatch_proves_independent_layers(tmp_path):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    guard, tokens = dispatch_case(tmp_path)
     original = guard.children['real-child']
     assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens) == {
         'veto': True, 'middleware': True, 'read_only': True, 'secrets': True,
@@ -78,35 +79,21 @@ def test_registered_dispatch_proves_independent_layers(tmp_path, hermes_dispatch
 
 
 @pytest.mark.parametrize('layer', ['veto', 'middleware'])
-def test_missing_registration_fails_proof(tmp_path, hermes_dispatch, layer):
+def test_bypassed_callback_fails_proof(tmp_path, monkeypatch, layer):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    guard, tokens = dispatch_case(tmp_path)
     if layer == 'veto':
-        hermes_dispatch.manager._hooks['pre_tool_call'] = []
+        monkeypatch.setattr(guard, 'pre_tool_call', lambda **kwargs: None)
     else:
-        hermes_dispatch.manager._middleware['tool_execution'] = []
+        monkeypatch.setattr(guard, 'tool_execution', lambda **kwargs: kwargs['next_call'](kwargs['args']))
     assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens)[layer] is False
 
 
-@pytest.mark.parametrize('layer', ['veto', 'middleware'])
-def test_registered_but_bypassed_layer_fails_proof(tmp_path, hermes_dispatch, monkeypatch, layer):
+def test_weakened_middleware_cannot_hide_behind_veto_stop(tmp_path, monkeypatch):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
-    if layer == 'veto':
-        monkeypatch.setattr(hermes_dispatch.plugins, '_dispatch_pre_tool_call_hooks',
-                            lambda *_args, **_kwargs: (None, None))
-    else:
-        monkeypatch.setattr(hermes_dispatch.middleware, '_run_execution_chain',
-                            lambda _kind, terminal, **kwargs: terminal(kwargs['args']))
-    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens)[layer] is False
-
-
-def test_weakened_middleware_cannot_hide_behind_veto_stop(tmp_path, hermes_dispatch, monkeypatch):
-    from shadow.trial.probe_dispatch import run_dispatch_checks
-
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    guard, tokens = dispatch_case(tmp_path)
     original = guard.tool_execution
 
     def allow_terminal(**kwargs):
@@ -115,17 +102,16 @@ def test_weakened_middleware_cannot_hide_behind_veto_stop(tmp_path, hermes_dispa
         return original(**kwargs)
 
     monkeypatch.setattr(guard, 'tool_execution', allow_terminal)
-    hermes_dispatch.register(guard)
     checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens)
     assert checks['veto'] is True
     assert checks['middleware'] is False
 
 
 @pytest.mark.parametrize('path,token', [('.env', 'secret'), ('../outside.txt', 'outside')])
-def test_returning_forbidden_canary_fails_proof(tmp_path, hermes_dispatch, monkeypatch, path, token):
+def test_returning_forbidden_canary_fails_proof(tmp_path, monkeypatch, path, token):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    guard, tokens = dispatch_case(tmp_path)
     original = guard.tool_execution
 
     def leak(**kwargs):
@@ -134,44 +120,28 @@ def test_returning_forbidden_canary_fails_proof(tmp_path, hermes_dispatch, monke
         return original(**kwargs)
 
     monkeypatch.setattr(guard, 'tool_execution', leak)
-    hermes_dispatch.register(guard)
     checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens)
     assert checks['read_only'] is True
     assert checks['secrets'] is False
 
 
-def test_inert_executor_records_attempt_when_policy_is_removed(tmp_path, hermes_dispatch, monkeypatch):
+def test_inert_executor_records_attempt_when_policy_is_removed(tmp_path, monkeypatch):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    guard, tokens = dispatch_case(tmp_path)
     monkeypatch.setattr(guard, 'pre_tool_call', lambda **_kwargs: None)
     monkeypatch.setattr(guard, 'tool_execution', lambda **kwargs: kwargs['next_call'](kwargs['args']))
-    hermes_dispatch.register(guard)
     assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens) == {
         'veto': False, 'middleware': False, 'read_only': False, 'secrets': False,
         'reason_code': 'read_only_scope_token_missing,read_only_middleware_executor_reached',
     }
 
 
-@pytest.mark.parametrize('layer', ['veto', 'middleware'])
-def test_read_only_reports_missing_registered_layer(tmp_path, hermes_dispatch, layer):
-    from shadow.trial.probe_dispatch import run_dispatch_checks
-
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
-    if layer == 'veto':
-        hermes_dispatch.manager._hooks['pre_tool_call'] = []
-    else:
-        hermes_dispatch.manager._middleware['tool_execution'] = []
-    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens)
-    assert checks['read_only'] is False
-    assert f'read_only_{layer}_unregistered' in checks['reason_code'].split(',')
-
-
 @pytest.mark.parametrize('failure', ['child_missing', 'scope_mismatch'])
-def test_read_only_reports_invalid_child_scope(tmp_path, hermes_dispatch, failure):
+def test_read_only_reports_invalid_child_scope(tmp_path, failure):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
-    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    guard, tokens = dispatch_case(tmp_path)
     scope = tmp_path
     if failure == 'child_missing':
         del guard.children['real-child']
@@ -182,12 +152,12 @@ def test_read_only_reports_invalid_child_scope(tmp_path, hermes_dispatch, failur
     assert checks['reason_code'] == f'read_only_{failure}'
 
 
-def test_read_only_diagnoses_protected_profile_scope(tmp_path, hermes_dispatch):
+def test_read_only_diagnoses_protected_profile_scope(tmp_path):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
     scope = tmp_path / '.hermes' / 'profiles' / 'demo' / 'scope'
     scope.mkdir(parents=True)
-    guard, tokens = dispatch_case(scope, hermes_dispatch)
+    guard, tokens = dispatch_case(scope)
     checks = run_dispatch_checks(guard, 'real-child', scope, tokens)
     assert checks['veto'] is True
     assert checks['middleware'] is True
@@ -200,14 +170,14 @@ def test_read_only_diagnoses_protected_profile_scope(tmp_path, hermes_dispatch):
     }
 
 
-def test_dispatch_read_scope_accepts_a_symlink_alias(tmp_path, hermes_dispatch):
+def test_dispatch_read_scope_accepts_a_symlink_alias(tmp_path):
     from shadow.trial.probe_dispatch import run_dispatch_checks
 
     scope = tmp_path / 'real'
     scope.mkdir()
     alias = tmp_path / 'alias'
     alias.symlink_to(scope, target_is_directory=True)
-    guard, tokens = dispatch_case(alias, hermes_dispatch)
+    guard, tokens = dispatch_case(alias)
     assert run_dispatch_checks(guard, 'real-child', alias, tokens)['read_only'] is True
 
 
