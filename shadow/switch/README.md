@@ -17,42 +17,41 @@ Shadow uses the exact pair from the newest completed saved test. Without that te
 Shadow asks for both model names. Hermes model discovery validates both models
 and credentials before confirmation or either call.
 
-The check names the two models and waits for yes. It runs a live Hermes agent turn
-on the old model, then passes the full returned history into a turn on the new
-model. Hermes resolves each model's transport. The second turn must observe the
-unchanged history, receive the first reply, and return that reply. Both turns must
-complete without errors and report the requested provider and model through
-Hermes request and response hooks.
+The check names the two models and waits for yes. It makes a public Hermes
+completion on the old model, then sends the original question, the first reply,
+and a follow-up question to the new model. The second answer must equal the
+first answer. Hermes resolves each model's transport.
 
-The first turn uses an arithmetic task with a one-word answer. Both probe agents
-use the current model's profile reasoning settings. Gradual switching retains
-those settings when it changes the model on an existing agent's request.
-When Hermes reports reasoning support and the profile has no explicit setting,
-the probe requests reasoning with `enabled: true`. A reasoning-capable source
-must return live sealed reasoning. Plain or empty reasoning cannot establish
-that proof. Models without reasoning support or an enabled reasoning setting can
-pass without sealed data.
+Public auxiliary request and response hooks must report the requested provider,
+model, response model, base URL, API mode, and a normal stop reason. Each
+completion must use exactly one physical request. Both models must share the
+same base URL and API mode. A temporary auxiliary task separates the check's
+observations from other traffic.
 
-Reasoning stays in the handed-off history. OpenAI encrypted content, Anthropic
-thinking signatures and redacted data, Gemini thought signatures, and OpenRouter
-reasoning-detail signatures and data must be absent from the second model's
-provider request. A conflicting `served_model`
-report fails the check. An absent report cannot verify which deployment answered.
+Public completion payloads do not expose sealed reasoning. If the source model's
+profile settings require sealed evidence, the check fails before either
+completion with `sealed_reasoning_unobservable`. This also applies when Hermes
+reports reasoning support and the profile has no explicit setting. The check
+never claims to have observed sealed reasoning.
 
-The check proves the forward history handoff. Switching back needs its own check.
-The check disables tools, memory, compression, background review, and session
-persistence. A custom context engine is refused before either model is called.
-On a pass, Shadow writes the pair into
+The check proves reply handoff on the observed routes. It does not prove full
+agent-history or reasoning compatibility. Switching back needs its own check.
+Provider and model overrides require
+`plugins.entries.shadow.llm.allow_provider_override` and
+`plugins.entries.shadow.llm.allow_model_override`. A refused override reports
+`llm_trust_denied`.
+
+On a pass, Shadow saves the pair through `ctx.set_config` under
 `plugins.entries.shadow.settings.verified_gradual_pairs` with `probe_passed: true`
 after publishing a short evidence file under the plugin's data folder. The
-evidence file has no prompt text, reasoning blobs, or credentials. If the config
+evidence has no prompt text, reasoning blobs, or credentials. If the config
 save fails, diagnostic evidence can remain, but it does not authorize a switch.
 
-A saved test's route must still match that entry: provider, model, base URL, and
-API mode, in the same old-to-new order. The entry must record matching reasoning
-settings and live sealed evidence when required. Changing the current model's
-reasoning settings requires a new proof. Older entries without reasoning settings
-also require a new proof. Keep other verified entries in the list.
+A saved test's route must still match that entry's provider, model, base URL, and
+API mode in the same old-to-new order. The entry must record matching reasoning
+settings. Changing the current model's reasoning settings requires a new proof.
+Older entries without reasoning settings also require a new proof. Keep other
+verified entries in the list.
 
 The saved entry has this shape. Shadow writes it when the check passes. Do not
 hand-edit `probe_passed` to true.
@@ -82,8 +81,8 @@ plugins:
 ```
 
 `evidence` is the file name under the plugin data folder. It records the provider,
-the two model names, the live history handoff, and the absence of replayed sealed
-reasoning. It does not record credentials, prompts, or conversation text. Only
+the two model names, the reply handoff, and that sealed reasoning was not
+observable. It does not record credentials, prompts, or conversation text. Only
 the saved config entry authorizes the pair.
 
 Run doctor again, then `/shadow switch <test-id>`. A missing or mismatched

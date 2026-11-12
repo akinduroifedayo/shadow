@@ -41,7 +41,7 @@ User-facing copy keys live in `shadow/copy/*.json`. Keep keys unique across file
 
 ## Hermes imports
 
-Use public Hermes plugin APIs. The private imports Shadow still needs, and the public seam each one would need, are listed in [docs/private-hermes-imports.md](docs/private-hermes-imports.md). Update that file when you add or remove one.
+Use public Hermes plugin context methods and public Hermes functions. `tests/test_public_hermes_api.py` rejects private external imports and attributes without exceptions. The public APIs and their limits are listed in [the Hermes integration notes](docs/private-hermes-imports.md). Update those notes when an integration changes.
 
 ## Open a pull request
 

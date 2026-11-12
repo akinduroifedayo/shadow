@@ -1,35 +1,33 @@
-# Private Hermes imports
+# Public Hermes integration
 
-This audit covers the nine private-name imports in model discovery and the live isolation probe. It uses Hermes reference commit `3b421578588243f920886e6fe79a6faa87ea026e`. Source references below are relative to that Hermes checkout.
+Shadow uses public plugin context methods and public Hermes functions. The API
+checks use Hermes reference commit `3b421578588243f920886e6fe79a6faa87ea026e`.
+`tests/test_public_hermes_api.py` scans every Python file under `shadow` for private
+external imports and attributes, plus the retired agent, gateway runner, and
+configuration-backend modules. It has no exceptions.
 
-Only the middleware runner has an equivalent public-named function. The other eight imports remain because replacing them would change local-only discovery or weaken the isolation proof. Shadow does not rebind or monkey-patch Hermes core.
+| Area | Public API | Behavior and limits |
+| --- | --- | --- |
+| Pair settings | `ctx.get_config` and `ctx.set_config` | Proofs stay under `plugins.entries.shadow.settings.verified_gradual_pairs`. Hermes owns the write. |
+| Profile discovery | `hermes_cli.config.read_raw_config_readonly` | Reads the raw profile document without expanding credential references. Shadow rejects a configured non-file backend before reading. It no longer reads private bootstrap readiness. |
+| Model lists | `agent.models_dev.fetch_models_dev(allow_network=False)` and configured models | Keeps declared models, cached metadata for known providers, custom-provider aliases, staged local models, and live provider observations. Registry-only aliases, home-provider overrides, credential names, and models.dev mappings no longer contribute. Public registry readers can scan and import plugins, so Shadow does not call them. |
+| Setup gateway | `hermes_cli.gateway_runtime.discover_gateway_endpoint` | A missing setup result with a present or inaccessible gateway endpoint asks the user to restart that profile's gateway. Shadow does not reload it. |
+| Guard proof | Shadow's `guard.pre_tool_call` and `guard.tool_execution` callbacks | Tests blocking, scoped reads, and secret refusal with an inert executor. This does not prove membership in Hermes's active hook or middleware registry. |
+| Pair proof | `ctx.llm.complete`, `ctx.register_hook`, and `ctx.register_auxiliary_task` | Makes two completions and checks route observations, one attempt per completion, stop reasons, and exact reply handoff. A temporary unique task separates concurrent auxiliary traffic. It does not prove full agent-history compatibility. |
+| Sealed reasoning | `pre_auxiliary_call` and `post_auxiliary_call` | Public payloads omit sealed reasoning. Required sealed evidence fails with `sealed_reasoning_unobservable` before a completion. Evidence always records sealed reasoning as unobserved. |
+| Pair trust | `agent.plugin_llm.PluginLlmTrustError` | Provider and model overrides require the corresponding `plugins.entries.shadow.llm.allow_*_override` grants. Refusal reports `llm_trust_denied`. |
+| Hook deadline | `hermes_cli.config.load_config_readonly` | Reads `plugins.hook_callback_timeout`. Uses 30 seconds by default, zero to disable the deadline, 30 for negative or invalid values, and a 600-second maximum, matching the reference host. |
+| Request fee | No suitable public cache-only reader | Returns unknown. OpenRouter tests cannot start without a known request fee. `fetch_model_metadata(force_refresh=False)` can fetch when its cache is stale, so Shadow does not call it. |
 
-| Shadow dependency | Result and Hermes evidence | Required Hermes seam |
-|---|---|---|
-| `shadow/common/discovery.py`, `config_backend._BOOTSTRAPPED` | No public equivalent. `hermes_cli/config_backend.py:293` bootstraps dotenv on a first read. `get_config_backend` at `:329` calls it. `bootstrap_deployment` at `:302` performs bootstrap rather than reporting readiness. | A side-effect-free getter for completed configuration bootstrap and backend kind. |
-| `shadow/common/discovery.py`, `providers._ALIASES` | No public equivalent. `providers/__init__.py:220` resolves aliases through `get_provider_profile`, but also discovers providers and refreshes plugins. `bound_profile_resolver` at `:407` refreshes the home layer through `:423`. | A snapshot of already-registered aliases without discovery or plugin imports. |
-| `shadow/common/discovery.py`, `providers._REGISTRY` | No public equivalent. `list_providers` at `providers/__init__.py:363` can discover providers and refresh home plugins. Shadow must inspect only metadata already registered. | A side-effect-free snapshot of registered provider profiles. |
-| `shadow/common/discovery.py`, `providers._bound_home_layer` | No public equivalent. The private getter at `providers/__init__.py:436` selects the bound home without scanning plugins. Public `bound_profile_resolver` at `:407` and `bound_registry_key` at `:313` can refresh the layer. | The same snapshot API must preserve bound-home aliases and overrides without refreshing plugins. |
-| `shadow/trial/probe_dispatch.py`, `tool_executor._ToolCallRef` | No public equivalent. `agent/tool_executor.py:278` defines the call identity used by the runtime veto. Its `__all__` at `:1956` exports full execution entry points, which cannot substitute for an inert preflight proof. | A public tool-call identity or an inert preflight API accepting call and session identities. |
-| `shadow/trial/probe_dispatch.py`, `tool_executor._pre_tool_block` | No public equivalent. `agent/tool_executor.py:662` returns the block and hook-modified arguments. `resolve_pre_tool_block` at `hermes_cli/plugins.py:1188` discards modified arguments and bypasses this executor entry point. | A public executor preflight returning both the block and final arguments. |
-| `shadow/trial/probe_dispatch.py`, `middleware._run_execution_chain` | Replaced with `run_tool_execution_middleware` at `hermes_cli/middleware.py:144`. It runs the same chain and supplies `original_args`. Shadow's guard accepts that context through `**_` in `shadow/trial/safety.py:147`. | Catalog allow-list inclusion for this public-named helper. |
-| `shadow/trial/probe_dispatch.py`, `plugins._delivery_manager` | No public equivalent. `hermes_cli/plugins.py:978` joins discovery before returning the delivery manager. `get_plugin_manager` at `:820` lacks that step. `iter_hook_callbacks` at `:1065` has no middleware counterpart. Registration handles at `hermes_cli/plugins_ledger.py:53` report disposal state, not exact membership in the active delivery registry. | Public inspection of exact hook and middleware registration membership with delivery discovery semantics. |
-| `shadow/trial/probe.py`, `plugins._resolve_hook_callback_timeout` | No public equivalent. `hermes_cli/plugins.py:236` applies defaults, invalid-value fallback, negative-value fallback, zero-disable behavior, and maximum clamping. `ctx.get_config` at `hermes_cli/plugins_context.py:73` reads plugin-relative configuration rather than the effective global timeout. | A public effective callback timeout getter or a deadline supplied to the callback. |
+Possible upstream API requests remain local ideas. No issue is required to use
+Shadow's current fallback behavior.
 
-The public `ctx.dispatch_tool` (`hermes_cli/plugins_context.py:483`) is not a substitute. It calls the tool registry directly, so it skips both the `pre_tool_call` veto and the `tool_execution` middleware and runs the real tool. It cannot prove either blocking layer.
-
-The tool middleware contract is documented in `website/docs/developer-guide/plugins/index.md:1707`. The runner has a public name and docstring, but `hermes_cli/data/plugin_api.json` does not allow-list its module or symbol. The catalog therefore still warns on its import. This replacement removes one private-name dependency without claiming catalog rule 9 is fully resolved.
-
-The reference validator reports **42 private-import findings before and after**, including imports outside this nine-item audit, and **0 private-attribute findings**. The targeted private-name imports decrease from **9 to 8**. Run the same read-only lint from the Shadow root with an existing Python environment and `PYTHONDONTWRITEBYTECODE=1`:
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/path/to/hermes-ref python - <<'PY'
-from pathlib import Path
-from hermes_cli.plugin_validate_private_imports import private_import_findings, private_attribute_findings
-
-for label, check in [('imports', private_import_findings), ('attributes', private_attribute_findings)]:
-    findings = check(Path.cwd())
-    print(label, len(findings))
-    print('\n'.join(findings))
-PY
-```
+- Add `ctx.hook_registered(name, callback)` and equivalent middleware inspection
+  for exact membership in the active delivery registry.
+- Expose sealed-reasoning observations or a host-owned model-pair compatibility
+  check through the public plugin API.
+- Add a cache-only request-fee reader that never refreshes stale metadata.
+- Expose a side-effect-free snapshot of registered provider profiles, aliases,
+  and bound-home overrides without importing plugins.
+- Expose configuration-bootstrap readiness and the effective hook deadline as
+  public getters so plugins do not need private readiness checks or policy copies.
