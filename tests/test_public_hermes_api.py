@@ -46,9 +46,13 @@ def scan(source, filename='<snippet>'):
                     external.add(alias.asname or alias.name)
 
     def imported_root(node):
-        while isinstance(node, ast.Attribute):
-            node = node.value
-        return isinstance(node, ast.Name) and node.id in external
+        if isinstance(node, ast.Attribute):
+            return node.attr == 'ctx' or imported_root(node.value)
+        if isinstance(node, ast.Call):
+            return imported_root(node.func)
+        if isinstance(node, ast.Subscript):
+            return imported_root(node.value)
+        return isinstance(node, ast.Name) and (node.id in external or node.id in {'ctx', '__import__'})
 
     def module_reference(node):
         if isinstance(node, ast.Name):
@@ -64,6 +68,8 @@ def scan(source, filename='<snippet>'):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and banned(node.value):
             report(node, f'banned module reference {node.value}')
         elif isinstance(node, ast.Attribute):
+            if module_reference(node) == 'sys.modules':
+                report(node, 'banned module registry read')
             if node.attr in BANNED_NAMES:
                 report(node, f'banned name {node.attr}')
             if banned(module_reference(node)):
@@ -116,3 +122,29 @@ def test_scanner_bans_backend_reexports_from_any_module():
     for name in BANNED_NAMES:
         assert scan(f'from hermes_cli.config import {name} as public_name')
         assert scan(f'import another_module as config; config.{name}()')
+
+
+def test_scanner_catches_call_subscript_and_context_roots():
+    expressions = [
+        "get_plugin_manager()._hooks",
+        "sys.modules['x']._y",
+        "sys.modules.get('x')._y",
+        "importlib.import_module('agent.model_metadata')._z",
+        "import_module('agent.model_metadata')._z",
+        "__import__('agent.model_metadata')._z",
+        "registry.profiles['x']._secret",
+        "ctx._manager",
+        "self.ctx._manager",
+        "service.ctx._manager._plugins",
+        "service.ctx()._manager",
+        "getattr(service.ctx, '_manager')",
+    ]
+    imports = ('import sys\nimport importlib\nfrom importlib import import_module\n'
+               'from hermes_cli.plugins import get_plugin_manager\nimport providers as registry\n')
+    for expression in expressions:
+        assert scan(imports + expression), expression
+
+
+def test_scanner_bans_module_registry_reads_without_private_attributes():
+    for expression in ["sys.modules['x']", "sys.modules.get('x')"]:
+        assert scan('import sys\n' + expression)
