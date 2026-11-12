@@ -57,7 +57,7 @@ def test_completion_supports_messages_route_overrides_and_task_identity():
     ('agent/usage_pricing.py', {'get_pricing_entry', 'resolve_billing_route'}),
     ('hermes_constants.py', {'get_hermes_home', 'resolve_reasoning_config'}),
     ('hermes_state.py', {'SessionDB'}),
-    ('plugins/plugin_storage.py', {'plugin_db'}),
+    ('plugins/plugin_storage.py', {'plugin_data_dir', 'plugin_db'}),
     ('gateway/session_context.py', {'get_session_env'}),
     ('toolsets.py', {'resolve_toolset'}),
 ])
