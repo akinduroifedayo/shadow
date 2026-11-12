@@ -1,9 +1,7 @@
-"""Verify a model switch through two live Hermes agent turns."""
+"""Verify a model switch through two public Hermes completions."""
 
 from copy import deepcopy
 from contextlib import suppress
-from contextvars import copy_context
-from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import os
@@ -61,32 +59,6 @@ def _observed_route(observed, provider, model):
     return clean_route(provider, model, observed['base_url'], observed['api_mode'])
 
 
-def _finished(result, provider, model):
-    return (isinstance(result, dict) and result.get('completed') is True
-            and result.get('failed') is False and result.get('interrupted') is False
-            and result.get('partial') is False and not result.get('error')
-            and not result.get('cleanup_errors') and not result.get('user_intervened')
-            and result.get('provider') == provider and result.get('model') == model
-            and result.get('served_model') in (None, '', model)
-            and isinstance(result.get('final_response'), str) and bool(result['final_response'].strip())
-            and isinstance(result.get('messages'), list) and result.get('api_calls') == 1)
-
-
-def _encrypted_blobs(value, *, reasoning_details=False):
-    if isinstance(value, dict):
-        for key, item in value.items():
-            sealed = (key in {'encrypted_content', 'thought_signature', 'thoughtSignature'}
-                      or key == 'signature' and (reasoning_details or value.get('type') == 'thinking')
-                      or key == 'data' and (reasoning_details or value.get('type') == 'redacted_thinking'))
-            if sealed and isinstance(item, str) and item.strip():
-                yield item
-            else:
-                yield from _encrypted_blobs(item, reasoning_details=reasoning_details or key == 'reasoning_details')
-    elif isinstance(value, list):
-        for item in value:
-            yield from _encrypted_blobs(item, reasoning_details=reasoning_details)
-
-
 def _assistant_text(messages):
     parts = []
     for message in messages if isinstance(messages, list) else []:
@@ -101,9 +73,8 @@ def _assistant_text(messages):
 
 
 class PairProbe:
-    def __init__(self, *, agent_factory, register_hook, write, evidence_dir, config=None):
-        self.agent_factory = agent_factory
-        self.register_hook = register_hook
+    def __init__(self, *, ctx, write, evidence_dir, config=None):
+        self.ctx = ctx
         self.write = write
         self.evidence_dir = Path(evidence_dir)
         self.reason_code = None
@@ -116,64 +87,54 @@ class PairProbe:
 
     def run(self, provider, old_model, new_model):
         self.reason_code = None
-
-        def isolated_probe():
-            from agent.delegation_context import delegated_child_context
-            with delegated_child_context():
-                return self._run(provider, old_model, new_model)
-
-        try:
-            with ThreadPoolExecutor(max_workers=1) as worker:
-                return worker.submit(copy_context().run, isolated_probe).result()
-        except Exception:
-            return self._fail('worker_exception')
-
-    def _run(self, provider, old_model, new_model):
-        sessions = [f'shadow-pair-{uuid4().hex}' for _ in range(2)]
-        events = {name: {sid: [] for sid in sessions} for name in ('pre_api_request', 'post_api_request', 'api_request_error')}
-        active, registrations, agents = True, [], []
+        task = 'shadow_pair_' + uuid4().hex
+        events = {name: [[], []] for name in ('pre_auxiliary_call', 'post_auxiliary_call')}
+        active_turn, registrations = None, []
 
         def observer(name):
             def capture(**event):
-                sid = event.get('session_id')
-                if active and sid in events[name]:
-                    fields = ('provider', 'model', 'response_model', 'base_url', 'api_mode', 'error', 'finish_reason',
-                              'conversation_history', 'request_messages')
-                    events[name][sid].append(deepcopy({key: event.get(key) for key in fields}))
+                if active_turn is not None and event.get('aux_task') == task:
+                    fields = ('provider', 'model', 'response_model', 'base_url', 'api_mode', 'error',
+                              'finish_reason', 'request_messages', 'api_request_id')
+                    events[name][active_turn].append(deepcopy({key: event.get(key) for key in fields}))
             return capture
 
         try:
+            from agent.plugin_llm import PluginLlmTrustError
+
             reasoning, sealed_required = pair_reasoning(self.config, provider, old_model)
-            sealed_observed = False
+            if sealed_required:
+                return self._fail('sealed_reasoning_unobservable')
+            # A unique task keeps concurrent auxiliary traffic out of this proof.
+            registrations.append(self.ctx.register_auxiliary_task(
+                task, display_name='Shadow pair check', description='Verify an exact model pair.'))
             for name in events:
-                registrations.append(self.register_hook(name, observer(name)))
-            results, history, first_answer = [], None, None
+                registrations.append(self.ctx.register_hook(name, observer(name)))
+            results, first_answer = [], None
+            messages = [{'role': 'user', 'content': FIRST}]
             for index, model in enumerate((old_model, new_model)):
-                agent = self.agent_factory(
-                    provider=provider, model=model, session_id=sessions[index],
-                    parent_session_id='shadow-pair-probe',
-                    enabled_toolsets=[], skip_memory=True, skip_context_files=True,
-                    skip_background_review=True, session_db=None, quiet_mode=True,
-                    max_iterations=1, max_tokens=512, run_budget_seconds=60,
-                    fallback_model=None, save_trajectories=False, side_agent=True,
-                    reasoning_config=deepcopy(reasoning['old' if index == 0 else 'new']),
-                )
-                agents.append(agent)
-                agent._persist_disabled = True
-                agent.compression_enabled = False
-                if agent.tools:
-                    return self._fail(f'turn_{index + 1}_tools_enabled')
-                result = agent.run_conversation(FIRST if index == 0 else SECOND, conversation_history=deepcopy(history))
-                if not _finished(result, provider, model):
+                active_turn = index
+                try:
+                    result = self.ctx.llm.complete(
+                        deepcopy(messages), provider=provider, model=model,
+                        max_tokens=512, timeout=60, task=task)
+                except PluginLlmTrustError:
+                    return self._fail('llm_trust_denied')
+                finally:
+                    active_turn = None
+                if (getattr(result, 'provider', None) != provider
+                        or not _matches_model(getattr(result, 'model', None), model)
+                        or not isinstance(getattr(result, 'text', None), str) or not result.text.strip()):
                     return self._fail(f'turn_{index + 1}_incomplete')
-                sid = sessions[index]
-                before, after = events['pre_api_request'][sid], events['post_api_request'][sid]
-                if events['api_request_error'][sid]:
-                    return self._fail(f'turn_{index + 1}_request_error')
+                before, after = events['pre_auxiliary_call'][index], events['post_auxiliary_call'][index]
                 if len(before) != 1:
                     return self._fail(f'turn_{index + 1}_request_count')
                 if len(after) != 1:
                     return self._fail(f'turn_{index + 1}_response_count')
+                if after[0].get('error'):
+                    return self._fail(f'turn_{index + 1}_request_error')
+                if not before[0].get('api_request_id') or before[0]['api_request_id'] != after[0].get('api_request_id'):
+                    return self._fail(f'turn_{index + 1}_request_identity')
                 route = _observed_route(after[0], provider, model)
                 if route is None:
                     return self._fail(f'turn_{index + 1}_response_route')
@@ -182,33 +143,22 @@ class PairProbe:
                 if after[0].get('finish_reason') != 'stop':
                     return self._fail(f'turn_{index + 1}_finish_reason')
                 if index == 0:
-                    history = deepcopy(result['messages'])
-                    first_answer = result['final_response'].strip()
-                    if first_answer not in _assistant_text(history):
-                        return self._fail('turn_1_history_missing')
-                    sealed_observed = any(_encrypted_blobs(history))
-                    if sealed_required and not sealed_observed:
-                        return self._fail('turn_1_sealed_reasoning_missing')
+                    first_answer = result.text.strip()
+                    messages += [{'role': 'assistant', 'content': result.text}, {'role': 'user', 'content': SECOND}]
                 else:
-                    carried = before[0].get('conversation_history')
-                    if not isinstance(carried, list) or carried[:len(history)] != history:
-                        return self._fail('turn_2_history_changed')
-                    request = before[0].get('request_messages')
-                    if first_answer not in _assistant_text(request):
+                    if first_answer not in _assistant_text(before[0].get('request_messages')):
                         return self._fail('turn_2_carried_text_missing')
-                    if result['final_response'].strip().strip('.').lower() != first_answer.strip('.').lower():
+                    if result.text.strip() != first_answer:
                         return self._fail('turn_2_answer_changed')
-                    if any(json.dumps(blob)[1:-1] in json.dumps(request) for blob in _encrypted_blobs(history)):
-                        return self._fail('turn_2_encrypted_reasoning_replayed')
                 results.append(route)
             old, new = results
             if old['base_url'] != new['base_url'] or old['api_mode'] != new['api_mode']:
                 return self._fail('pair_routes_differ')
             body = {'provider': provider, 'old_model': old_model, 'new_model': new_model,
-                    'turns': 2, 'reasoning': reasoning, 'sealed_reasoning_observed': sealed_observed,
-                    'reasoning_check': 'sealed_required' if sealed_required else 'preserved_when_present',
-                    'live_history_handoff': True,
-                    'encrypted_reasoning_replayed': False, 'carried_text': True, 'probe_passed': True,
+                    'turns': 2, 'reasoning': reasoning, 'reasoning_applied': False,
+                    'sealed_reasoning_observed': False,
+                    'reasoning_check': 'text_only', 'live_history_handoff': False,
+                    'carried_text': True, 'probe_passed': True,
                     'authorizes_switch': False}
             self.evidence_dir.mkdir(parents=True, exist_ok=True)
             evidence = self.evidence_dir / EVIDENCE_NAME
@@ -220,7 +170,8 @@ class PairProbe:
                     handle.flush()
                     os.fsync(handle.fileno())
                 entry = {'old': old, 'new': new, 'probe_passed': True, 'evidence': EVIDENCE_NAME,
-                         'reasoning': reasoning, 'sealed_reasoning_observed': sealed_observed}
+                         'reasoning': reasoning, 'reasoning_applied': False,
+                         'sealed_reasoning_observed': False}
                 temporary.replace(evidence)
                 if self.write(entry) is not True:
                     return self._fail('config_save_failed')
@@ -231,14 +182,11 @@ class PairProbe:
         except Exception:
             return self._fail('probe_exception')
         finally:
-            active = False
+            active_turn = None
             for registration in reversed(registrations):
                 if registration is not None:
                     with suppress(Exception):
                         registration.dispose()
-            for agent in agents:
-                with suppress(Exception):
-                    agent.close()
 
 
 def profile_home():
@@ -247,11 +195,6 @@ def profile_home():
         return Path(get_hermes_home())
     except Exception:
         return None
-
-
-def _agent_factory(**options):
-    from run_agent import AIAgent
-    return AIAgent(**options)
 
 
 def _command_failure(key, reason, **values):
@@ -301,45 +244,29 @@ def run_command(service, *, terminal, yes, old_model=None, new_model=None, provi
             ])
             if choice != 'y':
                 return line + '\n' + _command_failure('doctor.pair_declined', 'confirmation_declined')
-    context = config.get('context', {})
-    if not isinstance(context, dict) or context.get('engine', 'compressor') not in (None, '', 'compressor'):
-        return _command_failure('doctor.pair_context_engine', 'context_engine_unsupported')
     home = profile_home()
     if home is None:
         return _command_failure('doctor.pair_fail', 'profile_home_unavailable')
-    probe = PairProbe(agent_factory=_agent_factory, register_hook=service.ctx.register_hook,
-                      write=lambda entry: save_pair(home / 'config.yaml', entry),
+    probe = PairProbe(ctx=service.ctx,
+                      write=lambda entry: save_pair(service.ctx, entry),
                       evidence_dir=home / 'plugin-data' / 'shadow', config=config)
     passed = probe.run(provider, pair[0], pair[1])
     text = copy('doctor.pair_pass') if passed else copy('doctor.pair_fail') + '\n' + copy('switch.doctor.pair_failure_reason', reason=probe.reason_code)
+    if probe.reason_code == 'llm_trust_denied':
+        from .doctor import hermes_command
+        text += '\n' + copy('switch.doctor.pair_trust_fix',
+                            command=hermes_command(getattr(service.ctx, 'profile_name', None)))
     return text if terminal else line + '\n' + text
 
 
-def save_pair(config_path, entry):
-    """Add a proof through the profile's config backend and its write guards."""
+def save_pair(ctx, entry):
     try:
-        from hermes_cli.config_backend import read_config_doc, write_config_key
-
-        path = Path(config_path)
-        data = read_config_doc(path) or {}
-        _store(data, entry)
-        pairs = data['plugins']['entries']['shadow']['settings']['verified_gradual_pairs']
-        write_config_key(path, 'plugins.entries.shadow.settings.verified_gradual_pairs', pairs)
+        pairs = ctx.get_config('verified_gradual_pairs', [])
+        if not isinstance(pairs, list):
+            return False
+        pairs = [item for item in pairs if not (isinstance(item, dict)
+                 and item.get('old') == entry['old'] and item.get('new') == entry['new'])]
+        ctx.set_config('verified_gradual_pairs', [*pairs, entry])
         return True
     except Exception:
         return False
-
-
-def _store(data, entry):
-    if not isinstance(data, dict):
-        raise ValueError('config')
-    plugins = data.setdefault('plugins', {})
-    entries = plugins.setdefault('entries', {})
-    shadow = entries.setdefault('shadow', {})
-    settings = shadow.setdefault('settings', {})
-    pairs = settings.get('verified_gradual_pairs', [])
-    if not isinstance(pairs, list):
-        raise ValueError('verified_gradual_pairs must be a list')
-    pairs = [item for item in pairs if not (isinstance(item, dict) and item.get('old') == entry['old'] and item.get('new') == entry['new'])]
-    pairs.append(entry)
-    settings['verified_gradual_pairs'] = pairs

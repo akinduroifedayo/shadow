@@ -36,6 +36,19 @@ DETAIL = {
 }
 
 
+def hook_callback_timeout():
+    try:
+        from hermes_cli.config import load_config_readonly
+
+        plugins = (load_config_readonly() or {}).get('plugins')
+        if not isinstance(plugins, dict) or plugins.get('hook_callback_timeout') is None:
+            return 30.0
+        timeout = float(plugins['hook_callback_timeout'])
+        return 30.0 if timeout < 0 else min(timeout, 600.0)
+    except Exception:
+        return 30.0
+
+
 def active_home():
     try:
         from hermes_constants import get_hermes_home
@@ -65,6 +78,8 @@ def failure_text(checks):
             lines.append(DETAIL[name])
     if checks.get('model') is False:
         lines.append(DETAIL['model'])
+    if checks.get('reason_code') == 'gateway_restart_needed':
+        lines.append(copy('doctor.verify_gateway_restart', command=checks.get('restart_command', 'hermes gateway restart')))
     if checks.get('reason_code'):
         lines.append(copy('doctor.verify_failure_reason', reason=checks['reason_code']))
     return '\n'.join(lines)
@@ -297,9 +312,7 @@ class SetupProbe:
             self.calls.append({'session_id': session_id, 'model': response_model or '', 'provider': provider})
 
     def run(self):
-        from hermes_cli.plugins import _resolve_hook_callback_timeout
-
-        hook_timeout = _resolve_hook_callback_timeout()
+        hook_timeout = hook_callback_timeout()
         deadline = time.monotonic() + hook_timeout - 3 if hook_timeout > 0 else None
         plugin, job = self.plugin, self.job
         home = Path(job['home'])
@@ -361,7 +374,8 @@ class SetupProbe:
                     other=[job['other'], *other], secret=job['secret'], outside=job['outside'],
                 )
                 checks.update({name: len(seen) == 1 and message_checks[name] for name in ('memory', 'live_context', 'other_sessions')})
-                checks.update(run_dispatch_checks(guard, session_id, scope, job))
+                checks.update(run_dispatch_checks(guard, session_id, scope, job,
+                                                  registrations=plugin.guard_registrations))
                 checks['secrets'] = message_checks['secrets'] and checks['secrets']
                 calls = [call for call in self.calls if call['session_id'] == session_id]
                 checks['model'] = bool(completed and len(calls) == 1
@@ -566,10 +580,6 @@ def launch_setup(launcher, job, *, timeout=120, pause=time.sleep, killer=None):
     directory = launcher.directory
     directory.mkdir(parents=True, exist_ok=True)
     record_path(directory).unlink(missing_ok=True)
-    from .probe_gateway import refresh_setup_gateway
-    refresh_failure = refresh_setup_gateway(job['home'])
-    if refresh_failure:
-        return {'passed': False, 'incomplete': True, 'reason_code': refresh_failure}
     identity = launcher.identity
     prompt = directory / f'setup-{job["id"]}.txt'
     cleanup = []
@@ -601,12 +611,17 @@ def launch_setup(launcher, job, *, timeout=120, pause=time.sleep, killer=None):
         except (OSError, ValueError, sqlite3.Error, ImportError):
             return {'passed': False, 'unchanged': False}
         after = profile_snapshot(job['home'])
-        if not same_profile(before, after):
-            if result is None:
-                return {'passed': False, 'unchanged': False, 'timed_out': True}
+        unchanged = same_profile(before, after)
+        if result is None:
+            from .probe_gateway import missing_setup_result
+            missing = missing_setup_result(job['home'], job['profile'])
+            if not unchanged:
+                missing['unchanged'] = False
+            return missing
+        if not unchanged:
             return {'passed': False, 'unchanged': False}
         if not isinstance(result, dict) or result.get('passed') is not True:
-            return result or {'passed': False, 'timed_out': True}
+            return result
         if (not all(result.get(name) is True for name in (*CHECK_NAMES, 'model'))
                 or len(owned) < 2 or set(result.get('sessions', ())) != set(owned)
                 or identity.profile != job['profile'] or launcher.identity != identity):

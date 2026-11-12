@@ -1,6 +1,7 @@
-import sys
 from collections import Counter
-from types import ModuleType
+from decimal import Decimal
+from types import SimpleNamespace
+import sys
 
 import pytest
 
@@ -21,24 +22,21 @@ def pricing(monkeypatch):
     calls = []
     catalog = {model.model: {'prompt': '0.000002', 'completion': '0.000006', 'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
                for model in (CURRENT, TRIAL, OUTSIDE)}
-    package = ModuleType('hermes_cli')
-    package.__path__ = []
-    module = ModuleType('hermes_cli.models_pricing')
+    module = SimpleNamespace(request_fees={})
 
     def lookup(provider, **kwargs):
         calls.append(provider)
         return catalog if provider == 'openrouter' else {}
 
     module.get_pricing_for_provider = lookup
-    agent = ModuleType('agent')
-    agent.__path__ = []
-    metadata = ModuleType('agent.model_metadata')
-    metadata._model_metadata_cache = {name: {'pricing': {'request': '0'}} for name in catalog}
-    metadata._load_model_metadata_disk_cache = lambda: {}
-    monkeypatch.setitem(sys.modules, 'agent', agent)
-    monkeypatch.setitem(sys.modules, 'agent.model_metadata', metadata)
-    monkeypatch.setitem(sys.modules, 'hermes_cli', package)
+    def entry(model, *, provider):
+        assert provider == 'openrouter'
+        return SimpleNamespace(request_cost=Decimal(module.request_fees[model])
+                               if model in module.request_fees else None) if model in catalog else None
+
+    module.get_pricing_entry = entry
     monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', module)
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing', module)
     return module, catalog, calls
 
 
@@ -60,6 +58,7 @@ def fail_lookup(module):
     def unavailable(*args, **kwargs):
         raise AssertionError('Hermes pricing must not run after prepare')
     module.get_pricing_for_provider = unavailable
+    module.get_pricing_entry = unavailable
 
 
 def test_prepare_resolves_each_model_once(pricing, tmp_path):

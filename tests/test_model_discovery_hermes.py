@@ -11,9 +11,46 @@ import pytest
 HERMES_SOURCE = os.environ.get('SHADOW_HERMES_SOURCE')
 
 
+def test_real_hermes_discovers_gemini_before_any_provider_lookup(tmp_path):
+    from test_real_tools import require_hermes_reference
+
+    source = require_hermes_reference().resolve()
+    profile = tmp_path / 'profile'
+    profile.mkdir()
+    (profile / 'config.yaml').write_text('model:\n  provider: gemini\n  default: gemini-test\n')
+    script = textwrap.dedent('''\
+        import sys
+        import requests
+        from hermes_cli.config import read_raw_config_readonly
+        read_raw_config_readonly()
+
+        class ForbiddenDiscoveryEffect(BaseException):
+            pass
+
+        def audit(event, args):
+            if event.startswith('socket.'):
+                raise ForbiddenDiscoveryEffect('provider initialization used a socket')
+        sys.addaudithook(audit)
+        from shadow.common.discovery import discover_models
+        from shadow.common.models import Model
+
+        catalog = discover_models()
+        assert catalog.failure is None, catalog.failure
+        assert catalog.require('gemini', 'gemini-test') == Model('gemini', 'gemini-test')
+        ''')
+    repo = Path(__file__).resolve().parents[1]
+    interpreter = os.environ.get('SHADOW_HERMES_PYTHON', sys.executable)
+    result = subprocess.run([interpreter, '-c', script], cwd=tmp_path,
+                            capture_output=True, text=True, timeout=30,
+                            env={'PATH': '/usr/bin:/bin', 'HOME': str(tmp_path), 'HERMES_HOME': str(profile),
+                                 'PYTHONPATH': ':'.join([str(repo), str(source)]),
+                                 'PYTHONDONTWRITEBYTECODE': '1', 'GEMINI_API_KEY': 'fixture-value'})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize('warm_cache', [False, True])
-@pytest.mark.parametrize('initialized, registered', [(False, False), (True, False), (True, True)])
-def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, registered):
+@pytest.mark.parametrize('preload', ['registry', 'listing', 'lookup'])
+def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
     """Preload requests' IPv6 capability check, then trap all Hermes discovery effects."""
     if not HERMES_SOURCE:
         pytest.skip('set SHADOW_HERMES_SOURCE to a Hermes source checkout for the offline safety test')
@@ -24,10 +61,10 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, 
     profile.mkdir()
     (profile / 'config.yaml').write_text(textwrap.dedent('''\
         model:
-          provider: openai-codex
+          provider: nous
           default: gpt-future
         providers:
-          openai-codex:
+          nous:
             models: [gpt-future, gpt-next, gpt-6.1-sol, gpt-6.1-terra]
           openrouter:
             models: [future/router]
@@ -53,7 +90,7 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, 
     if warm_cache:
         cache = profile / 'models_dev_cache.json'
         cache.write_text(json.dumps({
-            'openai': {'env': ['OPENAI_API_KEY'], 'models': {'gpt-cached': {}}},
+            'nous': {'env': ['NOUS_API_KEY'], 'models': {'gpt-cached': {}}},
             'unconfigured': {'env': [], 'models': {'unconfigured/model': {}}},
         }))
         os.utime(cache, (1, 1))
@@ -75,14 +112,19 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, 
                     raise ForbiddenDiscoveryEffect('discovery opened a credential file')
 
         import requests
-        from hermes_cli import config_backend
-        if sys.argv[2] == 'initialized':
-            config_backend.get_config_backend()
-        if sys.argv[3] == 'registered':
-            from providers import list_providers
+        from hermes_cli.env_loader import load_hermes_dotenv
+        dotenv = Path(os.environ['HERMES_HOME']) / '.env'
+        dotenv.write_text('SHADOW_DOTENV_CANARY=fixture\\nOPENROUTER_API_KEY=fixture-value\\n')
+        load_hermes_dotenv(load_external_secrets=False)
+        assert os.environ['SHADOW_DOTENV_CANARY'] == 'fixture'
+        from providers import bound_registry_key, get_provider_profile, list_providers
+        if sys.argv[2] == 'registry':
+            bound_registry_key()
+        elif sys.argv[2] == 'listing':
             profiles = {profile.name: profile for profile in list_providers()}
             assert profiles['openrouter'].auth_type == 'api_key'
-        (Path(os.environ['HERMES_HOME']) / '.env').write_text('SHADOW_DOTENV_CANARY=fixture')
+        else:
+            assert get_provider_profile('openrouter').auth_type == 'api_key'
         sys.addaudithook(audit)
         original_getitem = type(os.environ).__getitem__
         def environment_value(self, key):
@@ -97,31 +139,26 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, 
         from shadow.common.models import Model
 
         catalog = discover_models()
-        if sys.argv[2] != 'initialized':
-            assert catalog.failure == 'discovery_unavailable'
-            print('real Hermes discovery refused before dotenv bootstrap')
-            raise SystemExit(0)
         assert catalog.failure is None, catalog.failure
-        assert catalog.current == Model('openai-codex', 'gpt-future', reachable=False)
+        assert catalog.current == Model('nous', 'gpt-future', reachable=False)
         assert catalog.require('lab', 'future/ember') == Model('lab', 'future/ember')
         assert catalog.require('custom:lab', 'future/ember') == Model('lab', 'future/ember')
         assert catalog.require('referenced', 'future/reference') == Model('referenced', 'future/reference')
-        if sys.argv[3] == 'registered':
-            assert catalog.require('openrouter', 'future/router') == Model('openrouter', 'future/router')
+        assert catalog.require('openrouter', 'future/router') == Model('openrouter', 'future/router')
         assert catalog.require('llamacpp', 'qwen-local') == Model('llamacpp', 'qwen-local')
         assert catalog.require('saved-lab', 'future/custom') == Model('custom:saved-lab', 'future/custom')
         try:
-            catalog.require('openai-codex', 'gpt-future')
+            catalog.require('nous', 'gpt-future')
         except ModelUnavailable as error:
             assert error.code == 'credentials_unknown', error.code
         else:
-            raise AssertionError('Codex was authenticated without a presence-only signal')
+            raise AssertionError('OAuth provider was authenticated without a presence-only signal')
         presence = ProviderPresence()
-        presence.observe(provider='openai-codex', session_id='offline-completed')
+        presence.observe(provider='nous', session_id='offline-completed')
         catalog = discover_models(live_providers=presence.providers())
-        assert catalog.current == Model('openai-codex', 'gpt-future')
+        assert catalog.current == Model('nous', 'gpt-future')
         for name in ('gpt-future', 'gpt-next', 'gpt-6.1-sol', 'gpt-6.1-terra'):
-            assert catalog.require('openai-codex', name) == Model('openai-codex', name)
+            assert catalog.require('nous', name) == Model('nous', name)
         assert not any(model.provider == 'unconfigured' for model in catalog.models)
         if sys.argv[1] == 'warm':
             assert any(model.model == 'gpt-cached' for model in catalog.models)
@@ -130,14 +167,10 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, initialized, 
     repo = Path(__file__).resolve().parents[1]
     import_paths = [str(repo), str(source)]
     interpreter = os.environ.get('SHADOW_HERMES_PYTHON', sys.executable)
-    result = subprocess.run([interpreter, '-c', script, 'warm' if warm_cache else 'cold',
-                             'initialized' if initialized else 'uninitialized',
-                             'registered' if registered else 'unregistered'],
+    result = subprocess.run([interpreter, '-c', script, 'warm' if warm_cache else 'cold', preload],
                             cwd=tmp_path, capture_output=True, text=True, timeout=30,
                             env={'PATH': '/usr/bin:/bin', 'HOME': str(tmp_path), 'HERMES_HOME': str(profile),
                                  'PYTHONPATH': ':'.join(import_paths), 'PYTHONDONTWRITEBYTECODE': '1',
                                  'SHADOW_TEST_PRESENT_KEY': 'fixture-value', 'OPENROUTER_API_KEY': 'fixture-value'})
     assert result.returncode == 0, result.stdout + result.stderr
-    expected = ('real Hermes local-only discovery passed' if initialized else
-                'real Hermes discovery refused before dotenv bootstrap')
-    assert result.stdout.strip() == expected
+    assert result.stdout.strip() == 'real Hermes local-only discovery passed'

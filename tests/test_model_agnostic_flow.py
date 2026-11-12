@@ -14,7 +14,7 @@ from shadow.switch import Engine, Store as SwitchStore
 from shadow.switch.plugin import SwitchPlugin
 from shadow.trial.plugin import TrialPlugin, register
 from test_model_discovery import hermes_profile
-from test_pair_probe import BASE, MODE, LiveAgents, hermes_agent_context
+from test_pair_probe import BASE, MODE, LiveCompletions, hermes_agent_context
 from test_plugin import FixtureLauncher, finish_controller
 
 
@@ -79,8 +79,9 @@ def test_unknown_maker_try_pair_proof_and_gradual_switch_end_to_end(
     service = SwitchPlugin(ctx, switch_engine, config_reader=lambda: {}, proposal_lookup=plugin.proposal)
     ctx.shadow_switch = service
     ctx.shadow_verify_pair = service.verify_pair
-    live = LiveAgents(mutate=lambda n, result, before, after: result['messages'][-1].pop('codex_reasoning_items'))
-    monkeypatch.setattr(pair_probe, '_agent_factory', live.agent)
+    live = LiveCompletions()
+    ctx.llm = live
+    ctx.register_auxiliary_task = live.register_auxiliary_task
     monkeypatch.setattr(pair_probe, 'profile_home', lambda: tmp_path)
     monkeypatch.setattr(pair_probe, 'save_pair', lambda path, entry: proof.append(entry) or True)
     ctx.register_hook = live.register_hook
@@ -120,7 +121,7 @@ def test_profile_credential_loss_refuses_pair_and_switch_before_calls(
         monkeypatch.delenv('SHADOW_TEST_ROUTER_KEY')
     service = SwitchPlugin(ctx, Engine(SwitchStore(sqlite3.connect(':memory:'))),
                            config_reader=lambda: {}, proposal_lookup=lambda _: Proposal('test', old, new, 'better'))
-    monkeypatch.setattr(pair_probe, '_agent_factory', lambda **kw: pytest.fail('no provider call may be made'))
+    ctx.llm.complete = lambda *args, **kwargs: pytest.fail('no provider call may be made')
     text = (service.verify_pair(yes=True, old_model=old.model, new_model=new.model, provider=old.provider)
             if operation == 'pair' else service.command('switch test'))
     assert 'credentials_unknown' in text

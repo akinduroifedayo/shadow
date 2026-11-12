@@ -101,7 +101,7 @@ def install_stubs(home: Path) -> None:
     hermes_cli = types.ModuleType("hermes_cli")
     hermes_cli.__path__ = []
     config_mod = types.ModuleType("hermes_cli.config")
-    config_mod.read_config_doc = read_config
+    config_mod.read_raw_config_readonly = read_config
     config_mod.load_config_readonly = read_config
     plugins = types.ModuleType("plugins")
     plugins.__path__ = []

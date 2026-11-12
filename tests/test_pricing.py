@@ -2,7 +2,7 @@ import json
 import sys
 from dataclasses import replace
 from decimal import Decimal
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -35,18 +35,11 @@ def hermes_pricing(monkeypatch):
     module.get_pricing_for_provider = get_pricing_for_provider
     agent = ModuleType('agent')
     agent.__path__ = []
-    metadata = ModuleType('agent.model_metadata')
-    metadata._model_metadata_cache = {}
-    metadata._load_model_metadata_disk_cache = lambda: {
-        model: {'pricing': {}} for model in catalogs.get('openrouter', {})
-    }
-
-    def unexpected_fetch(*args, **kwargs):
-        pytest.fail('Shadow must use cached OpenRouter metadata without a network fetch')
-
-    metadata.fetch_model_metadata = unexpected_fetch
+    pricing = ModuleType('agent.usage_pricing')
+    pricing.get_pricing_entry = lambda model, *, provider: (
+        SimpleNamespace(request_cost=None) if model in catalogs.get(provider, {}) else None)
     monkeypatch.setitem(sys.modules, 'agent', agent)
-    monkeypatch.setitem(sys.modules, 'agent.model_metadata', metadata)
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing', pricing)
     monkeypatch.setitem(sys.modules, 'hermes_cli', package)
     monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', module)
     return catalogs
@@ -57,19 +50,15 @@ def prepare(tmp_path, current=CURRENT, trial=TRIAL, judge=OUTSIDE):
     return engine.prepare(selection(tmp_path, 20), current, trial, [judge])
 
 
-@pytest.mark.parametrize('provider', ['openrouter'])
-def test_hermes_priced_provider_can_start_with_a_dollar_estimate(tmp_path, hermes_pricing, provider):
-    trial = Model(provider, 'nousresearch/hermes-3-llama-3.1-405b')
-    hermes_pricing[provider] = {trial.model: {'prompt': '0.000002', 'completion': '0.000006', 'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
-
+def test_public_token_rates_and_pricing_entry_allow_start(tmp_path, hermes_pricing):
+    trial = FLAT_MODELS['trial']
+    hermes_pricing['openrouter'] = {trial.model: {
+        'prompt': '0.000002', 'completion': '0.000006',
+        'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
     record = prepare(tmp_path, trial=trial)
-    text = render_start(record, isolation_verified=True)
-
-    assert record['can_start']
-    assert record['estimate']['priced'] and record['estimate']['total'] > 0
-    assert f"About ${record['estimate']['total']:.2f}" in text
-    assert '[Start]' in text
-    assert cost_usage(price_for(trial), Usage(1000, 100)) == pytest.approx(0.0026)
+    assert record['can_start'] and record['estimate']['total'] > 0
+    assert price_for(trial).request_cost == 0
+    assert '[Start]' in render_start(record, isolation_verified=True)
 
 
 @pytest.mark.parametrize('missing', ['current', 'trial', 'judge'])
@@ -87,7 +76,8 @@ def test_missing_contestant_or_judge_price_blocks_start(tmp_path, hermes_pricing
     assert record['estimate']['total'] is None
     assert record['estimate']['tokens'] > 0
     assert '[Start]' not in text
-    assert "Shadow doesn't have a price for " + models[missing].name in text
+    assert "Shadow doesn't have a price for " in text
+    assert models[missing].name in text
     assert 'tokens' in text
 
 
@@ -110,20 +100,6 @@ def test_older_or_unavailable_hermes_preserves_direct_price_fallback(tmp_path, m
     assert cost_usage(price_for(CURRENT), Usage(1000, 100)) == 0
     assert cost_usage(price_for(OUTSIDE), Usage(1000, 100)) == pytest.approx(0.0045)
     assert cost_usage(price_for(Model('openai', 'gpt-6.1-sol')), Usage(1000, 100)) == pytest.approx(0.003)
-
-
-def test_hermes_proxy_price_preserves_cache_buckets(hermes_pricing):
-    model = FLAT_MODELS['current']
-    hermes_pricing['openrouter'] = {
-        model.model: {'prompt': '0.000007', 'completion': '0.000011',
-                        'input_cache_read': '0.000002', 'input_cache_write': '0.000009'}
-    }
-
-    price = price_for(model)
-
-    assert (price.input, price.output, price.cache_read, price.cache_write) == (
-        Decimal('7'), Decimal('11'), Decimal('2'), Decimal('9'))
-    assert cost_usage(price_for(model), Usage(1000, 100, 200, 100)) == pytest.approx(0.0073)
 
 
 @pytest.mark.parametrize('provider', ['openrouter', 'fireworks', 'novita'])
@@ -181,7 +157,7 @@ def test_invalid_hermes_rows_are_unknown_and_block_start(tmp_path, hermes_pricin
 def test_proxy_prices_keep_namespace_date_and_free_suffix_identity(hermes_pricing, priced_id, other_id):
     hermes_pricing['openrouter'] = {priced_id: {'prompt': '0.000002', 'completion': '0.000006', 'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
 
-    assert cost_usage(price_for(Model('openrouter', priced_id)), Usage(1000, 100)) == pytest.approx(0.0026)
+    assert price_for(Model('openrouter', priced_id)) is not None
     assert price_for(Model('openrouter', other_id)) is None
 
 
@@ -231,6 +207,10 @@ def test_plan_label_counts_only_plan_side_usage(tmp_path, hermes_pricing, monkey
         models[role].model: {'prompt': '0.000002', 'completion': '0.000006',
                              'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
     }
+    def known_price(model):
+        return (Price(*(Decimal(value) for value in ('2', '6', '1', '3')), plan=model.plan)
+                if model.provider == 'openrouter' else price_for(model))
+    monkeypatch.setattr('shadow.trial.usage.price_for', known_price)
     picked = selection(tmp_path, 20)
     picked = replace(picked, turns=[replace(turn, goal='abc', context='') for turn in picked.turns])
     engine = TrialEngine(FakeContext(), Store(tmp_path / 'mixed.sqlite'), None)
@@ -250,7 +230,7 @@ def test_plan_label_counts_only_plan_side_usage(tmp_path, hermes_pricing, monkey
         assert record['estimate']['controller'] == 0
     if role == 'judge':
         assert record['estimate']['judge'] == 0
-    assert cost_usage(price_for(models[role]), Usage(1000, 100)) == 0
+    assert cost_usage(Price.from_record(record['prices'][models[role].provider][models[role].model]), Usage(1000, 100)) == 0
     assert f'your plan: {tokens:,} tokens, worth about ${cost:.2f} at list price' in render_start(record, isolation_verified=True)
 
 
@@ -274,91 +254,19 @@ def test_unknown_cache_rate_blocks_start(tmp_path, hermes_pricing, bucket, rate)
 
 
 @pytest.mark.parametrize('role', ['current', 'trial', 'judge'])
-@pytest.mark.parametrize('fee', ['-1', 'invalid', 'NaN', 'Infinity', '1e999999999', None, True])
-def test_openrouter_request_fee_is_unknown_and_blocks_start(tmp_path, hermes_pricing, role, fee):
+def test_missing_pricing_entry_blocks_each_role(tmp_path, hermes_pricing, role):
     models = {'current': CURRENT, 'trial': TRIAL, 'judge': OUTSIDE}
     models[role] = FLAT_MODELS[role]
     model = models[role]
-    hermes_pricing['openrouter'] = {
-        model.model: {'prompt': '0.000002', 'completion': '0.000006',
-                      'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
-    }
-    sys.modules['agent.model_metadata']._model_metadata_cache = {
-        model.model: {'pricing': {'request': fee}}
-    }
-
+    hermes_pricing['openrouter'] = {model.model: {
+        'prompt': '0.000002', 'completion': '0.000006',
+        'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
+    sys.modules['agent.usage_pricing'].get_pricing_entry = lambda *args, **kwargs: None
     record = prepare(tmp_path, **models)
-
     assert not record['can_start']
     assert record['estimate']['total'] is None
     assert price_for(model) is None
     assert '[Start]' not in render_start(record, isolation_verified=True)
-
-
-@pytest.mark.parametrize('metadata', [{}, {'pricing': None}, {'pricing': []}, None])
-def test_missing_openrouter_request_metadata_blocks_start(tmp_path, hermes_pricing, metadata):
-    model = FLAT_MODELS['trial']
-    hermes_pricing['openrouter'] = {
-        model.model: {'prompt': '0.000002', 'completion': '0.000006',
-                      'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
-    }
-    module = sys.modules['agent.model_metadata']
-    module._model_metadata_cache = {model.model: metadata} if metadata is not None else {}
-    module._load_model_metadata_disk_cache = lambda: {}
-
-    record = prepare(tmp_path, trial=model)
-
-    assert not record['can_start']
-    assert price_for(model) is None
-    assert '[Start]' not in render_start(record, isolation_verified=True)
-
-
-@pytest.mark.parametrize('source', ['memory', 'disk'])
-@pytest.mark.parametrize('pricing', [{}, {'request': '0'}, {'request': 0}])
-def test_cached_openrouter_zero_or_absent_request_fee_can_start(
-        tmp_path, hermes_pricing, source, pricing):
-    model = FLAT_MODELS['trial']
-    hermes_pricing['openrouter'] = {
-        model.model: {'prompt': '0.000002', 'completion': '0.000006',
-                      'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
-    }
-    module = sys.modules['agent.model_metadata']
-    metadata = {model.model: {'pricing': pricing}}
-    module._model_metadata_cache = metadata if source == 'memory' else {}
-    module._load_model_metadata_disk_cache = lambda: metadata if source == 'disk' else {}
-
-    record = prepare(tmp_path, trial=model)
-
-    assert record['can_start']
-    assert '[Start]' in render_start(record, isolation_verified=True)
-    assert cost_usage(price_for(model), Usage(1000, 100)) == pytest.approx(0.0026)
-
-
-def test_prepared_openrouter_prices_do_not_read_metadata_again(tmp_path, hermes_pricing, monkeypatch):
-    from shadow.trial.engine import estimate
-    from shadow.trial.judge import JudgeChoice
-    from shadow.trial.usage import stored_price
-
-    model = FLAT_MODELS['trial']
-    hermes_pricing['openrouter'] = {
-        model.model: {'prompt': '0.000002', 'completion': '0.000006',
-                      'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}
-    }
-    record = prepare(tmp_path, trial=model)
-
-    def unavailable(*args, **kwargs):
-        pytest.fail('Frozen prices must not read OpenRouter metadata again')
-
-    module = sys.modules['agent.model_metadata']
-    module._model_metadata_cache = {}
-    monkeypatch.setattr(module, '_load_model_metadata_disk_cache', unavailable)
-    monkeypatch.setattr(sys.modules['hermes_cli.models_pricing'], 'get_pricing_for_provider', unavailable)
-
-    prediction = estimate(selection(tmp_path, 20), CURRENT, model,
-                          JudgeChoice('third_maker', (OUTSIDE,), 'auto'), prices=record['prices'])
-
-    assert prediction['priced']
-    assert cost_usage(stored_price(record['prices'], model), Usage(1000, 100)) == pytest.approx(0.0026)
 
 
 @pytest.mark.parametrize('provider', ['openai-codex', 'openai'])

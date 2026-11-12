@@ -27,3 +27,18 @@ def matching_proof(config, old, new, *, sealed_required=False):
         and (not (sealed_required or configured_sealed_required) or proof.get('sealed_reasoning_observed') is True)
         for proof in settings.get('verified_gradual_pairs', [])
     )
+
+
+def _encrypted_blobs(value, *, reasoning_details=False):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            sealed = (key in {'encrypted_content', 'thought_signature', 'thoughtSignature'}
+                      or key == 'signature' and (reasoning_details or value.get('type') == 'thinking')
+                      or key == 'data' and (reasoning_details or value.get('type') == 'redacted_thinking'))
+            if sealed and isinstance(item, str) and item.strip():
+                yield item
+            else:
+                yield from _encrypted_blobs(item, reasoning_details=reasoning_details or key == 'reasoning_details')
+    elif isinstance(value, list):
+        for item in value:
+            yield from _encrypted_blobs(item, reasoning_details=reasoning_details)

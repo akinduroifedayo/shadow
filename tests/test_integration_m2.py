@@ -219,7 +219,7 @@ def test_desktop_registration_reads_saved_tests_from_the_profile_data_dir(tmp_pa
              'gateway', 'gateway.session_context')
     modules = {name: ModuleType(name) for name in names}
     modules['hermes_constants'].get_hermes_home = lambda: str(tmp_path)
-    modules['hermes_cli.config'].read_config_doc = lambda _path: {}
+    modules['hermes_cli.config'].read_raw_config_readonly = lambda: {}
     modules['plugins.plugin_storage'].plugin_db = open_db
     modules['plugins.plugin_storage'].plugin_data_dir = lambda _name: db_path.parent
     modules['gateway.session_context'].get_session_env = lambda _key, default='': default
@@ -246,7 +246,7 @@ def _register_both(tmp_path, monkeypatch, env=None):
              'gateway', 'gateway.session_context')
     modules = {name: ModuleType(name) for name in names}
     modules['hermes_constants'].get_hermes_home = lambda: str(tmp_path)
-    modules['hermes_cli.config'].read_config_doc = lambda _path: {}
+    modules['hermes_cli.config'].read_raw_config_readonly = lambda: {}
     modules['plugins.plugin_storage'].plugin_db = lambda *_args: sqlite3.connect(':memory:')
     modules['plugins.plugin_storage'].plugin_data_dir = lambda _name: tmp_path
     modules['gateway.session_context'].get_session_env = lambda key, default='': env.get(key, default)

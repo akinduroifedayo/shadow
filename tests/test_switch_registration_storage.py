@@ -25,7 +25,7 @@ def storage_environment(monkeypatch, tmp_path):
         return sqlite3.connect(path, check_same_thread=False)
 
     modules["hermes_constants"].get_hermes_home = lambda: profile[0]
-    modules["hermes_cli.config"].read_config_doc = lambda path: config()
+    modules["hermes_cli.config"].read_raw_config_readonly = lambda: config()
     modules["plugins.plugin_storage"].plugin_db = plugin_db
     modules["gateway.session_context"].get_session_env = lambda key, default="": default
     for name, module in modules.items():

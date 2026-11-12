@@ -327,11 +327,11 @@ def verified_pair_from_config(config_reader, old, new, *, sealed_required=False)
 def register(ctx):
     from gateway.session_context import get_session_env
     from hermes_constants import get_hermes_home
-    from hermes_cli.config import read_config_doc
+    from hermes_cli.config import read_raw_config_readonly
     from plugins.plugin_storage import plugin_db
 
     profile_home = Path(get_hermes_home()).resolve()
-    config_reader = lambda: read_config_doc(profile_home / "config.yaml") or {}
+    config_reader = lambda: read_raw_config_readonly() or {}
     data_dir = profile_home / "plugin-data" / "shadow"
 
     def open_database():

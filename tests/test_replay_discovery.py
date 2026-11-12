@@ -26,11 +26,10 @@ def test_child_describes_deferred_read_then_reads_without_running_real_tool(tmp_
     config = tool_search.ToolSearchConfig.from_raw({'enabled': 'on'})
 
     def dispatch(name, args, handler):
-        ref = hermes_dispatch.executor._ToolCallRef(name, args, '', 'fixture-call', [])
-        block, args = hermes_dispatch.executor._pre_tool_block(SimpleNamespace(session_id='real-child'), ref)
-        assert not block, block
-        return hermes_dispatch.middleware._run_execution_chain(
-            'tool_execution', handler, tool_name=name, args=args, session_id='real-child')
+        directive = guard.pre_tool_call(tool_name=name, args=args, session_id='real-child')
+        assert directive is None, directive
+        return guard.tool_execution(tool_name=name, args=args, next_call=handler,
+                                    original_args=args, session_id='real-child')
 
     described = json.loads(dispatch('tool_describe', {'names': ['shadow_read']},
         lambda args: tool_search.dispatch_tool_describe(args, current_tool_defs=definitions, config=config)))

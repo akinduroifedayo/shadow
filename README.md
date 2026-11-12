@@ -207,7 +207,7 @@ The override skips only the verdict check. Every other switch check still applie
 
 The route decides how a switch runs. Two models that share a provider, base URL, and request format switch gradually. Models from different providers switch all at once. Two models on the same provider with a different base URL or request format can't be switched, with or without `--anyway`.
 
-A gradual switch also needs a live compatibility check for the exact old-to-new pair. Run the command doctor prints, or see [the gradual-switch check](shadow/switch/README.md).
+A gradual switch also needs a live compatibility check for the exact old-to-new pair. The check verifies two completion routes and carries the first reply into the second request. It stays blocked when sealed reasoning is required because public Hermes APIs do not expose that evidence. Run the command doctor prints, or see [the gradual-switch check](shadow/switch/README.md).
 
 New conversations move to the new model at about 10%, then 50%, then 100%. Each conversation keeps its assigned model. Each step advances after 20 finished new-model turns. Desktop also has a manual advance action.
 
@@ -226,8 +226,9 @@ Run `hermes shadow doctor` first. It prints what's ready and the exact command t
 | No other model is available. | Run `hermes model` in this profile. Configure and sign in to another model, then run doctor again. |
 | No third-maker judge is available. | Add a model from another maker through Hermes, or review the disclosed backup judging method on the start card. An explicit `--judge` must be from an outside maker. |
 | A capability is not granted. | Run `hermes plugins capabilities shadow` to inspect grants. Run `hermes plugins enable shadow` interactively to review consent, then follow doctor's remaining fixes. |
+| The setup check gets no result from a running gateway. | Run `hermes gateway restart`, or `hermes -p <profile> gateway restart` for a named profile, then repeat the check. Shadow does not reload the gateway. |
 | Start is locked. | Follow doctor. Run `hermes shadow doctor --verify` for the live isolation check. Keep at least 20 eligible completed turns in the chosen days. |
-| Price is unknown. | Pick a model with a known price. Check the model and provider identity shown on the start card. |
+| Price is unknown. | Pick a model with a known price. OpenRouter request fees use Hermes's public pricing reader. A stale cache may refresh once at preparation with a bounded timeout. |
 | The service tier cannot be priced. | Use the provider's standard tier in Hermes, then prepare the test again. |
 | A test stopped. | Run `hermes shadow status` and `hermes shadow results <id>`. Read the stop reason. Raise the cap for a fresh test if needed, or resolve provider access and rate limits. |
 | The judge couldn't be reached. | If the first two judge requests fail with no answer, Shadow stops the test and nothing is switched. Check that the judge model still works in Hermes, or pick another with `--judge`, then start a new test. |

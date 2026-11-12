@@ -86,11 +86,10 @@ def test_launched_controller_describes_then_calls_deferred_step(tmp_path, monkey
         name, args, scope_error = hermes_dispatch.executor._unwrap_tool_search_call(
             agent, name, args)
         assert scope_error is None
-        ref = hermes_dispatch.executor._ToolCallRef(name, args, '', 'fixture-call', [])
-        block, args = hermes_dispatch.executor._pre_tool_block(SimpleNamespace(session_id='controller'), ref)
-        assert not block, block
-        result = hermes_dispatch.middleware._run_execution_chain(
-            'tool_execution', handler, tool_name=name, args=args, session_id='controller')
+        directive = plugin.guard.pre_tool_call(tool_name=name, args=args, session_id='controller')
+        assert directive is None, directive
+        result = plugin.guard.tool_execution(tool_name=name, args=args, next_call=handler,
+                                             original_args=args, session_id='controller')
         assert plugin.guard.stop_message not in result
         return json.loads(result)
 

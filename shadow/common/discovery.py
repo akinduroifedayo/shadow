@@ -119,8 +119,8 @@ def _credential_reason(provider, config, profile, metadata, environment_names):
         reference = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', raw_key)
         if reference:
             env_names.append(reference[1])
-    if profile is not None and getattr(profile, 'auth_type', '') == 'api_key':
-        env_names.extend(getattr(profile, 'env_vars', ()))
+    if profile is not None and profile.auth_type == 'api_key':
+        env_names.extend(profile.env_vars)
     if metadata is not None and profile is None:
         env_names.extend(name for name in metadata.get('env') or []
                          if isinstance(name, str) and name.endswith(('_KEY', '_TOKEN')))
@@ -140,13 +140,15 @@ def _credential_reason(provider, config, profile, metadata, environment_names):
 
 
 def _local_context():
-    from hermes_constants import get_hermes_home
-    from hermes_cli.config_backend import read_config_doc
+    from hermes_cli.config import read_raw_config_readonly
     from hermes_cli.config_providers import coerce_provider_id, stringify_provider_map
     from hermes_cli.inventory import ConfigContext
 
     # load_picker_context expands credential references throughout the config.
-    config = read_config_doc(Path(get_hermes_home()) / 'config.yaml') or {}
+    config = read_raw_config_readonly()
+    if getattr(config, 'read_error', None):
+        raise ValueError('profile config could not be read')
+    config = config or {}
     model = config.get('model', {})
     if isinstance(model, str):
         model = {'default': model}
@@ -162,20 +164,19 @@ def _local_context():
 def discover_models(*, live_providers=frozenset()):
     current = Model('', '')
     try:
-        from hermes_cli.config_backend import _BOOTSTRAPPED
-
-        # A first config read bootstraps dotenv; remote backends may perform network I/O.
-        if not _BOOTSTRAPPED or os.environ.get('HERMES_CONFIG_BACKEND', 'file') not in ('', 'file'):
+        if os.environ.get('HERMES_CONFIG_BACKEND', 'file') not in ('', 'file'):
             return ModelCatalog(current, [], failure='discovery_unavailable')
         from agent.models_dev import PROVIDER_TO_MODELS_DEV, fetch_models_dev
         from agent.secret_scope import current_secret_scope, serves_routed_profile
         from hermes_cli.local_runtime.bootstrap import staged_model_ids
         from hermes_cli.providers import (LLAMACPP_ALIASES, LLAMACPP_PROVIDER_ID,
                                           custom_provider_aliases, custom_provider_slug)
-        from providers import _ALIASES, _REGISTRY, _bound_home_layer
+
+        from providers import bound_profile_resolver, bound_registry_key
 
         context = _local_context()
-        layer = _bound_home_layer()[0]
+        bound_registry_key()
+        resolve_profile = bound_profile_resolver()
         current = Model(context.current_provider, context.current_model)
         metadata = fetch_models_dev(allow_network=False)
         scope = current_secret_scope()
@@ -205,16 +206,16 @@ def discover_models(*, live_providers=frozenset()):
         for provider, config in configs.items():
             if not isinstance(config, dict) or config.get('enabled') is False or provider in excluded:
                 continue
-            # Registry lookups can import plugins that load dotenv; use only registered metadata.
-            canonical = layer.aliases.get(provider) or _ALIASES.get(provider, provider)
-            profile = layer.registry.get(canonical) or _REGISTRY.get(canonical)
+            home, shared = resolve_profile(provider)
+            profile = home or shared
+            canonical = profile.name if profile is not None else provider
             provider_aliases = custom_provider_aliases(config.get('name', provider), provider)
             if profile is not None:
-                provider_aliases = set(provider_aliases) | set(getattr(profile, 'aliases', ()))
+                provider_aliases = set(provider_aliases) | set(profile.aliases)
             aliases.update({alias: provider for alias in provider_aliases})
             if current.provider == provider or current.provider in provider_aliases:
                 current = Model(provider, current.model)
-            metadata_id = getattr(profile, 'models_dev_id', '') or PROVIDER_TO_MODELS_DEV.get(provider, provider)
+            metadata_id = (profile.models_dev_id if profile is not None else '') or PROVIDER_TO_MODELS_DEV.get(canonical, canonical)
             cached = metadata.get(metadata_id) or {}
             names = (_declared_models(config.get('model') or config.get('default_model'))
                      + _declared_models(config.get('models')))

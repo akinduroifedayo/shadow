@@ -67,7 +67,7 @@ def test_saving_pair_proof_keeps_isolation_until_a_real_setting_changes(tmp_path
     isolation.write_record(tmp_path, isolation.current_identity('demo'), passed_checks())
     launcher = ControllerLauncher('demo', tmp_path)
     assert launcher.isolation_verified
-    assert save_pair(tmp_path / 'config.yaml', _proof())
+    assert save_pair(pair_config_backend.ctx, _proof())
     saved = deepcopy(config)
     assert launcher.isolation_verified
     assert config == saved

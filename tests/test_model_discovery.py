@@ -4,7 +4,7 @@ import sys
 import pytest
 
 from shadow.common.copy import load_copy
-from shadow.common.discovery import ModelCatalog, ModelUnavailable, discover_models
+from shadow.common.discovery import ModelCatalog, ModelUnavailable, _local_context, discover_models
 from shadow.common.models import Model
 
 
@@ -19,8 +19,6 @@ def hermes_profile(monkeypatch):
     monkeypatch.setattr('shadow.common.discovery._local_context', lambda: context)
     inventory = ModuleType('hermes_cli.inventory')
     inventory.load_picker_context = lambda: context
-    backend = ModuleType('hermes_cli.config_backend')
-    backend._BOOTSTRAPPED = True
     def forbidden(*args, **kwargs):
         pytest.fail('discovery called a credential resolver or refresh-capable inventory')
     inventory.build_models_payload = forbidden
@@ -29,18 +27,8 @@ def hermes_profile(monkeypatch):
     auth.resolve_codex_runtime_credentials = forbidden
     runtime = ModuleType('hermes_cli.runtime_provider')
     runtime.resolve_runtime_provider = forbidden
-    providers = ModuleType('providers')
-    profiles = {'openrouter': SimpleNamespace(env_vars=('SHADOW_TEST_ROUTER_KEY',), auth_type='api_key',
-                                             aliases=(), models_dev_id=''),
-                'deepseek': SimpleNamespace(env_vars=('SHADOW_TEST_DEEPSEEK_KEY',), auth_type='api_key',
-                                           aliases=(), models_dev_id='')}
-    providers.get_provider_profile = profiles.get
-    providers._REGISTRY = profiles
-    home_profiles = {}
-    providers._ALIASES = {}
-    providers._bound_home_layer = lambda: (SimpleNamespace(registry=home_profiles, aliases={}), None, '')
     metadata = ModuleType('agent.models_dev')
-    metadata.PROVIDER_TO_MODELS_DEV = {}
+    metadata.PROVIDER_TO_MODELS_DEV = {'openrouter': 'openrouter', 'deepseek': 'deepseek', 'openai-codex': 'openai'}
     metadata.get_model_capabilities = lambda *args, **kwargs: SimpleNamespace(supports_reasoning=None)
     calls = []
     data = {}
@@ -66,27 +54,72 @@ def hermes_profile(monkeypatch):
         return value if value.startswith('custom:') else 'custom:' + value
     routes.custom_provider_slug = slug
     routes.custom_provider_aliases = lambda name, key='': {name.lower(), key.lower(), slug(name, key)} - {''}
+    providers = ModuleType('providers')
+    profiles = {
+        'deepseek': SimpleNamespace(name='deepseek', aliases=('deep-seek',), models_dev_id='',
+                                    auth_type='api_key', env_vars=('DEEPSEEK_API_KEY',)),
+        'gemini': SimpleNamespace(name='gemini', aliases=('google',), models_dev_id='google',
+                                  auth_type='api_key', env_vars=('GOOGLE_API_KEY', 'GEMINI_API_KEY')),
+    }
+    for profile in profiles.values():
+        for name in profile.env_vars:
+            monkeypatch.delenv(name, raising=False)
+    providers.bound_profile_resolver = lambda: lambda name: (None, profiles.get(name))
+    providers.bound_registry_key = lambda: ('fixture', 0)
     monkeypatch.setenv('SHADOW_TEST_ROUTER_KEY', 'fixture-value')
-    for name, module in [('hermes_cli.inventory', inventory), ('hermes_cli.auth', auth),
-                         ('hermes_cli.runtime_provider', runtime), ('providers', providers),
-                         ('hermes_cli.config_backend', backend),
+    for name, module in [('providers', providers), ('hermes_cli.inventory', inventory), ('hermes_cli.auth', auth),
+                         ('hermes_cli.runtime_provider', runtime),
                          ('agent.models_dev', metadata), ('hermes_cli.providers', routes),
                          ('agent.secret_scope', scope),
                          ('hermes_cli.local_runtime.bootstrap', local)]:
         monkeypatch.setitem(sys.modules, name, module)
-    return SimpleNamespace(context=context, configs=configs, calls=calls, data=data, profiles=profiles,
+    return SimpleNamespace(context=context, configs=configs, calls=calls, data=data,
                            inventory=inventory, local=local, runtime=runtime, auth=auth,
-                           home_profiles=home_profiles, scope=scope, constants=constants)
+                           scope=scope, constants=constants, providers=providers, profiles=profiles)
 
 
-def test_profile_override_owns_its_credential_presence(hermes_profile, monkeypatch):
-    hermes_profile.home_profiles['openrouter'] = SimpleNamespace(
-        env_vars=('SHADOW_TEST_HOME_KEY',), auth_type='api_key', aliases=(), models_dev_id='openrouter')
-    hermes_profile.configs['openrouter'].pop('key_env')
-    hermes_profile.data['openrouter'] = {'env': ['SHADOW_TEST_ROUTER_KEY'], 'models': {}}
-    assert discover_models().candidates == []
-    monkeypatch.setenv('SHADOW_TEST_HOME_KEY', 'fixture-value')
+def test_discovery_uses_bound_resolver_without_discovery_or_miss_rescan(hermes_profile):
+    def forbidden(*args, **kwargs):
+        pytest.fail('discovery called a provider discovery entry point')
+    hermes_profile.providers.get_provider_profile = forbidden
+    hermes_profile.providers.list_providers = forbidden
+    calls = []
+    hermes_profile.providers.bound_registry_key = lambda: calls.append('initialize')
+    def bound():
+        calls.append('bound')
+        def resolve(name):
+            calls.append(name)
+            return None, hermes_profile.profiles.get(name)
+        return resolve
+    hermes_profile.providers.bound_profile_resolver = bound
     assert len(discover_models().candidates) == 2
+    assert calls == ['initialize', 'bound', 'openrouter', 'deepseek']
+
+
+def test_gemini_key_without_explicit_key_env_is_reachable(hermes_profile, monkeypatch):
+    hermes_profile.configs['gemini'] = {'models': ['gemini-test']}
+    monkeypatch.setenv('GEMINI_API_KEY', 'fixture-value')
+    catalog = discover_models()
+    assert catalog.require('google', 'gemini-test') == Model('gemini', 'gemini-test')
+
+
+def test_home_profile_restores_aliases_and_cached_model_override(hermes_profile, monkeypatch):
+    home = SimpleNamespace(name='deepseek', aliases=('home-seek',), models_dev_id='home-models',
+                           auth_type='api_key', env_vars=('HOME_SEEK_API_KEY',))
+    hermes_profile.providers.bound_profile_resolver = lambda: lambda name: (
+        home if name == 'deepseek' else None, hermes_profile.profiles.get(name))
+    hermes_profile.data['home-models'] = {'models': {'home/new': {}}}
+    monkeypatch.setenv('HOME_SEEK_API_KEY', 'fixture-value')
+    assert discover_models().require('home-seek', 'home/new') == Model('deepseek', 'home/new')
+
+
+def test_profile_adds_cached_models_without_static_mapping(hermes_profile, monkeypatch):
+    hermes_profile.configs['deepinfra'] = {}
+    hermes_profile.profiles['deepinfra'] = SimpleNamespace(
+        name='deepinfra', aliases=(), models_dev_id='', auth_type='api_key', env_vars=('DEEPINFRA_API_KEY',))
+    hermes_profile.data['deepinfra'] = {'models': {'lab/model': {}}}
+    monkeypatch.setenv('DEEPINFRA_API_KEY', 'fixture-value')
+    assert discover_models().require('deepinfra', 'lab/model') == Model('deepinfra', 'lab/model')
 
 
 def test_profile_inventory_is_the_candidate_source(hermes_profile):
@@ -97,10 +130,9 @@ def test_profile_inventory_is_the_candidate_source(hermes_profile):
     assert hermes_profile.calls == [False]
 
 
-def test_discovery_never_initiates_hermes_dotenv_bootstrap(hermes_profile):
-    sys.modules['hermes_cli.config_backend']._BOOTSTRAPPED = False
-    hermes_profile.inventory.load_picker_context = lambda: pytest.fail('dotenv bootstrap initiated')
-    assert discover_models().failure == 'discovery_unavailable'
+def test_discovery_does_not_use_the_picker_that_expands_credentials(hermes_profile):
+    hermes_profile.inventory.load_picker_context = lambda: pytest.fail('picker read')
+    assert len(discover_models().candidates) == 2
 
 
 def test_discovery_never_reads_a_nonlocal_config_backend(hermes_profile, monkeypatch):
@@ -161,8 +193,6 @@ def test_environment_credential_values_are_not_read(hermes_profile, monkeypatch)
 @pytest.fixture
 def codex_profile(hermes_profile):
     hermes_profile.configs['openai-codex'] = {'models': ['gpt-future']}
-    hermes_profile.profiles['openai-codex'] = SimpleNamespace(
-        env_vars=(), auth_type='oauth_external', aliases=(), models_dev_id='openai')
     return hermes_profile
 
 
@@ -255,7 +285,6 @@ def test_config_booleans_alone_do_not_prove_credentials(hermes_profile, monkeypa
 def test_base_url_presence_does_not_authenticate_a_provider(hermes_profile, monkeypatch):
     monkeypatch.delenv('SHADOW_TEST_ROUTER_KEY')
     monkeypatch.setenv('SHADOW_ROUTER_BASE_URL', 'https://unused.invalid')
-    hermes_profile.profiles['openrouter'].env_vars = ('SHADOW_ROUTER_BASE_URL',)
     assert discover_models().candidates == []
 
 
@@ -327,6 +356,28 @@ def test_discovery_failure_is_reported_without_a_model_guess(hermes_profile, mon
     assert 'private-exception-canary' not in str(error.value)
 
 
+@pytest.mark.parametrize('fallback', [{}, {'model': {'provider': 'openrouter', 'default': 'future/aurora'}}])
+def test_failed_raw_config_read_refuses_discovery(hermes_profile, monkeypatch, fallback):
+    class FailedConfigRead(dict):
+        read_error = ValueError('private-exception-canary')
+
+    config = ModuleType('hermes_cli.config')
+    config.read_raw_config_readonly = lambda: FailedConfigRead(fallback)
+    providers = ModuleType('hermes_cli.config_providers')
+    providers.coerce_provider_id = lambda value: value or ''
+    providers.stringify_provider_map = lambda value: value or {}
+    hermes_profile.inventory.ConfigContext = SimpleNamespace
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config', config)
+    monkeypatch.setitem(sys.modules, 'hermes_cli.config_providers', providers)
+    monkeypatch.setattr('shadow.common.discovery._local_context', _local_context)
+    catalog = discover_models()
+    assert catalog.failure == 'discovery_unavailable'
+    assert not catalog.candidates
+    with pytest.raises(ModelUnavailable) as error:
+        catalog.resolve('future/aurora')
+    assert 'private-exception-canary' not in str(error.value)
+
+
 def test_discovery_copy_is_in_the_three_line_copy_table():
     from pathlib import Path
     directory = Path(__file__).resolve().parents[1] / 'shadow' / 'copy'
@@ -338,8 +389,6 @@ def test_discovery_copy_is_in_the_three_line_copy_table():
 
 def test_api_key_metadata_does_not_authenticate_an_oauth_route(hermes_profile, monkeypatch):
     hermes_profile.configs['openai-codex'] = {'models': ['gpt-future']}
-    hermes_profile.profiles['openai-codex'] = SimpleNamespace(
-        env_vars=(), auth_type='oauth_external', aliases=(), models_dev_id='openai')
     hermes_profile.data['openai'] = {'env': ['SHADOW_TEST_OPENAI_KEY'], 'models': {}}
     monkeypatch.setenv('SHADOW_TEST_OPENAI_KEY', 'fixture-value')
     with pytest.raises(ModelUnavailable) as error:
@@ -429,7 +478,7 @@ def test_routed_profile_uses_only_scoped_key_names(hermes_profile):
 
 
 def test_launch_profile_combines_scope_and_environment_names(hermes_profile, monkeypatch):
-    hermes_profile.scope.current_secret_scope = lambda: {'SHADOW_TEST_DEEPSEEK_KEY': None}
+    hermes_profile.scope.current_secret_scope = lambda: {'DEEPSEEK_API_KEY': None}
     assert len(discover_models().candidates) == 3
 
 
