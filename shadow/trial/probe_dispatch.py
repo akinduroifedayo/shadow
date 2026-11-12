@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 
-def run_dispatch_checks(guard, session_id, scope, tokens):
+def run_dispatch_checks(guard, session_id, scope, tokens, *, registrations):
     checks = {'veto': False, 'middleware': False, 'read_only': False, 'secrets': False}
     original = guard.children.get(session_id)
     if original is None:
@@ -36,9 +36,11 @@ def run_dispatch_checks(guard, session_id, scope, tokens):
 
     try:
         veto, attempts = exercise('terminal', {'command': 'true'}, layer='veto')
-        checks['veto'] = guard.stop_message in veto and not attempts
+        checks['veto'] = (getattr(registrations.get('veto'), 'active', False) is True
+                          and guard.stop_message in veto and not attempts)
         middleware, attempts = exercise('terminal', {'command': 'true'}, layer='middleware')
-        checks['middleware'] = guard.stop_message in middleware and not attempts
+        checks['middleware'] = (getattr(registrations.get('middleware'), 'active', False) is True
+                                and guard.stop_message in middleware and not attempts)
         allowed_veto, veto_attempts = exercise('read_file', {'path': 'notes.txt'}, layer='veto')
         allowed, attempts = exercise('read_file', {'path': 'notes.txt'}, layer='middleware')
         read_conditions = {
@@ -51,7 +53,8 @@ def run_dispatch_checks(guard, session_id, scope, tokens):
         checks['read_only'] = not failures
         if failures:
             checks['reason_code'] = ','.join(failures)
-        checks['secrets'] = True
+        checks['secrets'] = all(getattr(registrations.get(name), 'active', False) is True
+                                for name in ('veto', 'middleware'))
         for path, token in (('.env', tokens['secret']), ('../outside.txt', tokens['outside'])):
             veto, veto_attempts = exercise('read_file', {'path': path}, layer='veto')
             answered, attempts = exercise('read_file', {'path': path}, layer='middleware')

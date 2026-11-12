@@ -104,12 +104,14 @@ class FakeContext:
 
     def register_hook(self, name, callback, **kwargs):
         self.hooks.setdefault(name, []).append(callback)
+        return SimpleNamespace(active=True)
 
     def hook(self, name, **kwargs):
         return [callback(**kwargs) for callback in self.hooks.get(name, [])]
 
     def register_middleware(self, name, callback):
         self.middleware[name] = callback
+        return SimpleNamespace(active=True)
 
     def register_tool(self, *, name, handler, **kwargs):
         self.tools[name] = handler

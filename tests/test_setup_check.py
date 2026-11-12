@@ -74,6 +74,7 @@ def _plugin(tmp_path):
     register(ctx, plugin=plugin)
     if _active_dispatch is not None:
         _active_dispatch.register(plugin.guard)
+        plugin.guard_registrations = dict(zip(('veto', 'middleware'), _active_dispatch.registrations))
     return ctx, plugin
 
 

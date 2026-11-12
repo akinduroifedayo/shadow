@@ -45,7 +45,7 @@ def hermes_dispatch(tmp_path, monkeypatch):
         return manager
 
     try:
-        yield SimpleNamespace(register=register, manager=manager, plugins=plugins,
+        yield SimpleNamespace(register=register, registrations=registrations, manager=manager, plugins=plugins,
                               middleware=middleware, executor=executor)
     finally:
         for name, module in list(sys.modules.items()):
@@ -55,6 +55,10 @@ def hermes_dispatch(tmp_path, monkeypatch):
                     sys.modules[name] = before[name]
                 else:
                     sys.modules.pop(name, None)
+
+
+def active_registrations():
+    return {name: SimpleNamespace(active=True) for name in ('veto', 'middleware')}
 
 
 def dispatch_case(tmp_path, hermes_dispatch=None):
@@ -81,7 +85,7 @@ def test_guard_callbacks_prove_independent_layers(tmp_path):
 
     guard, tokens = dispatch_case(tmp_path)
     original = guard.children['real-child']
-    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens) == {
+    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=active_registrations()) == {
         'veto': True, 'middleware': True, 'read_only': True, 'secrets': True,
     }
     assert guard.children['real-child'] is original
@@ -98,7 +102,7 @@ def test_bypassed_callback_fails_proof(tmp_path, monkeypatch, layer):
         monkeypatch.setattr(guard, 'pre_tool_call', lambda **kwargs: None)
     else:
         monkeypatch.setattr(guard, 'tool_execution', lambda **kwargs: kwargs['next_call'](kwargs['args']))
-    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens)[layer] is False
+    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=active_registrations())[layer] is False
 
 
 def test_weakened_middleware_cannot_hide_behind_veto_stop(tmp_path, monkeypatch):
@@ -113,7 +117,7 @@ def test_weakened_middleware_cannot_hide_behind_veto_stop(tmp_path, monkeypatch)
         return original(**kwargs)
 
     monkeypatch.setattr(guard, 'tool_execution', allow_terminal)
-    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens)
+    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=active_registrations())
     assert checks['veto'] is True
     assert checks['middleware'] is False
 
@@ -131,7 +135,7 @@ def test_returning_forbidden_canary_fails_proof(tmp_path, monkeypatch, path, tok
         return original(**kwargs)
 
     monkeypatch.setattr(guard, 'tool_execution', leak)
-    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens)
+    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=active_registrations())
     assert checks['read_only'] is True
     assert checks['secrets'] is False
 
@@ -142,7 +146,7 @@ def test_inert_executor_records_attempt_when_policy_is_removed(tmp_path, monkeyp
     guard, tokens = dispatch_case(tmp_path)
     monkeypatch.setattr(guard, 'pre_tool_call', lambda **_kwargs: None)
     monkeypatch.setattr(guard, 'tool_execution', lambda **kwargs: kwargs['next_call'](kwargs['args']))
-    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens) == {
+    assert run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=active_registrations()) == {
         'veto': False, 'middleware': False, 'read_only': False, 'secrets': False,
         'reason_code': 'read_only_scope_token_missing,read_only_middleware_executor_reached',
     }
@@ -158,7 +162,7 @@ def test_read_only_reports_invalid_child_scope(tmp_path, failure):
         del guard.children['real-child']
     else:
         scope = tmp_path.parent
-    checks = run_dispatch_checks(guard, 'real-child', scope, tokens)
+    checks = run_dispatch_checks(guard, 'real-child', scope, tokens, registrations=active_registrations())
     assert checks['read_only'] is False
     assert checks['reason_code'] == f'read_only_{failure}'
 
@@ -169,7 +173,7 @@ def test_read_only_diagnoses_protected_profile_scope(tmp_path):
     scope = tmp_path / '.hermes' / 'profiles' / 'demo' / 'scope'
     scope.mkdir(parents=True)
     guard, tokens = dispatch_case(scope)
-    checks = run_dispatch_checks(guard, 'real-child', scope, tokens)
+    checks = run_dispatch_checks(guard, 'real-child', scope, tokens, registrations=active_registrations())
     assert checks['veto'] is True
     assert checks['middleware'] is True
     assert checks['secrets'] is True
@@ -189,7 +193,7 @@ def test_dispatch_read_scope_accepts_a_symlink_alias(tmp_path):
     alias = tmp_path / 'alias'
     alias.symlink_to(scope, target_is_directory=True)
     guard, tokens = dispatch_case(alias)
-    assert run_dispatch_checks(guard, 'real-child', alias, tokens)['read_only'] is True
+    assert run_dispatch_checks(guard, 'real-child', alias, tokens, registrations=active_registrations())['read_only'] is True
 
 
 def test_failure_reason_survives_result_file_and_rendering(tmp_path):
@@ -201,3 +205,33 @@ def test_failure_reason_survives_result_file_and_rendering(tmp_path):
     assert body['reason_code'] == reason
     saved = json.loads((tmp_path / 'setup-result-fixture.json').read_text())
     assert reason in failure_text(saved)
+
+
+@pytest.mark.parametrize('layer', ['veto', 'middleware'])
+@pytest.mark.parametrize('state', ['missing', 'inactive'])
+def test_unregistered_callback_fails_proof(tmp_path, layer, state):
+    from shadow.trial.probe_dispatch import run_dispatch_checks
+
+    guard, tokens = dispatch_case(tmp_path)
+    registrations = active_registrations()
+    if state == 'missing':
+        del registrations[layer]
+    else:
+        registrations[layer].active = False
+    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=registrations)
+    assert checks[layer] is False
+    assert checks['secrets'] is False
+    assert checks[{'veto': 'middleware', 'middleware': 'veto'}[layer]] is True
+
+
+@pytest.mark.parametrize('layer', ['veto', 'middleware'])
+def test_disposed_hermes_registration_fails_proof(tmp_path, hermes_dispatch, layer):
+    from shadow.trial.probe_dispatch import run_dispatch_checks
+
+    guard, tokens = dispatch_case(tmp_path, hermes_dispatch)
+    registrations = dict(zip(('veto', 'middleware'), hermes_dispatch.registrations))
+    assert all(run_dispatch_checks(guard, 'real-child', tmp_path, tokens,
+                                   registrations=registrations).values())
+    registrations[layer].dispose()
+    checks = run_dispatch_checks(guard, 'real-child', tmp_path, tokens, registrations=registrations)
+    assert checks[layer] is False and checks['secrets'] is False

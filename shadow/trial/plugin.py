@@ -71,6 +71,7 @@ class TrialPlugin:
         self.config_reader = config_reader
         self.watch_wait = watch_wait or time.sleep
         self.guard = ReplayGuard()
+        self.guard_registrations = {}
         self.isolation_message = copy('trial.isolation_required')
         self.message_watcher = None
         self.setup_active = None
@@ -725,7 +726,7 @@ def register(ctx, plugin=None):
     ctx.register_hook('subagent_start', record_child)
     ctx.register_hook('pre_llm_call', service.pre_llm_call)
     ctx.register_hook('on_session_end', service.on_session_end)
-    ctx.register_hook('pre_tool_call', service.guard.pre_tool_call)
+    service.guard_registrations['veto'] = ctx.register_hook('pre_tool_call', service.guard.pre_tool_call)
 
     def observe_request(**event):
         if service.message_watcher is not None:
@@ -741,7 +742,7 @@ def register(ctx, plugin=None):
             if service.engine is not None:
                 return getattr(service.engine, _name)(**event)
         ctx.register_hook(hook, observe)
-    ctx.register_middleware('tool_execution', service.guard.tool_execution)
+    service.guard_registrations['middleware'] = ctx.register_middleware('tool_execution', service.guard.tool_execution)
     ctx.register_middleware('llm_execution', service.llm_execution)
     tools = [
         ('shadow_read', service.reads.read, {'path': {'type': 'string'}}, ['path']),

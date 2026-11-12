@@ -374,7 +374,8 @@ class SetupProbe:
                     other=[job['other'], *other], secret=job['secret'], outside=job['outside'],
                 )
                 checks.update({name: len(seen) == 1 and message_checks[name] for name in ('memory', 'live_context', 'other_sessions')})
-                checks.update(run_dispatch_checks(guard, session_id, scope, job))
+                checks.update(run_dispatch_checks(guard, session_id, scope, job,
+                                                  registrations=plugin.guard_registrations))
                 checks['secrets'] = message_checks['secrets'] and checks['secrets']
                 calls = [call for call in self.calls if call['session_id'] == session_id]
                 checks['model'] = bool(completed and len(calls) == 1
