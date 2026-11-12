@@ -122,13 +122,13 @@ Below the headline:
 
 - **Win-rate bar.** The new model's win rate, with ties counted as half, as a point inside its confidence range (95%, or 97.5% on a second look). A marker shows 50%.
 - **Two-model table.** One row per model with win rate, cost per turn, and speed per turn. A column appears only when both models have that measurement recorded.
-- **Advice tag.** A short label based on why you started the test, its quality outcome, and its cost band. Switch candidates can show **Safe to switch**, **Switch saves money**, or **Stay on your current model**. Comparisons name the model that came out ahead or matched for less, or show **Even match**. Settled quality results keep a factual tag when cost is unknown. See the [full tag table and open decisions](docs/verdict-tags.md).
+- **Advice tag.** A short label based on why you started the test, its quality outcome, and its cost band. Switch candidates can show **Safe to switch**, **Switch saves money**, or **Stay on your current model**. Comparisons name the model that came out ahead or matched for less, or show **Even match**. Settled quality results keep a factual tag when cost is unknown. See the [full tag table](docs/verdict-tags.md).
 
 The receipt underneath shows result counts, cost per turn, speed, tool steps, and broken calls. **Show the numbers** in Desktop and `hermes shadow results <id> --stats` in the terminal list the net win rate, interval, sign test, holds-up check, judge self-agreement, and where the new model won or lost.
 
-This is the real `fb953624` result described below, captured in Hermes Desktop:
+This sample render, from the plugin's Desktop page with test fixtures, shows the numbers-first headline, the win-rate bar, the two-model table, and the Stay on your current model tag. It is not from a real test.
 
-![Won 1, lost 8, tied 21 of 30 turns, 74% cheaper per turn, with the win-rate bar, the two-model table, and the Stay on your current model tag](docs/images/verdict.png)
+![Won 3, lost 18, tied 9 of 30 turns, 61% cheaper per turn, with the win-rate bar, the two-model table, and the Stay on your current model tag](docs/images/verdict.png)
 
 The next screenshot is sample data, rendered from the plugin's Desktop page with test fixtures. It is not from a real test.
 
