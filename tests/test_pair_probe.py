@@ -90,7 +90,10 @@ def test_public_completions_prove_text_handoff_and_routes(tmp_path):
     assert body['live_history_handoff'] is False
     assert body['reasoning_check'] == 'text_only'
     assert body['sealed_reasoning_observed'] is False
-    assert body['encrypted_reasoning_replayed'] is False
+    assert 'encrypted_reasoning_replayed' not in body
+    assert body['reasoning_applied'] is False
+    assert written[0]['reasoning_applied'] is False
+    assert written[0]['reasoning'] == body['reasoning'] == {'old': None, 'new': None}
     assert body['authorizes_switch'] is False
     assert (tmp_path / 'pair-evidence.json').stat().st_mode & 0o777 == 0o600
     assert not live.tasks and all(not callbacks for callbacks in live.hooks.values())

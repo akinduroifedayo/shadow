@@ -155,9 +155,10 @@ class PairProbe:
             if old['base_url'] != new['base_url'] or old['api_mode'] != new['api_mode']:
                 return self._fail('pair_routes_differ')
             body = {'provider': provider, 'old_model': old_model, 'new_model': new_model,
-                    'turns': 2, 'reasoning': reasoning, 'sealed_reasoning_observed': False,
+                    'turns': 2, 'reasoning': reasoning, 'reasoning_applied': False,
+                    'sealed_reasoning_observed': False,
                     'reasoning_check': 'text_only', 'live_history_handoff': False,
-                    'encrypted_reasoning_replayed': False, 'carried_text': True, 'probe_passed': True,
+                    'carried_text': True, 'probe_passed': True,
                     'authorizes_switch': False}
             self.evidence_dir.mkdir(parents=True, exist_ok=True)
             evidence = self.evidence_dir / EVIDENCE_NAME
@@ -169,7 +170,8 @@ class PairProbe:
                     handle.flush()
                     os.fsync(handle.fileno())
                 entry = {'old': old, 'new': new, 'probe_passed': True, 'evidence': EVIDENCE_NAME,
-                         'reasoning': reasoning, 'sealed_reasoning_observed': False}
+                         'reasoning': reasoning, 'reasoning_applied': False,
+                         'sealed_reasoning_observed': False}
                 temporary.replace(evidence)
                 if self.write(entry) is not True:
                     return self._fail('config_save_failed')

@@ -48,11 +48,16 @@ def test_pair_reasoning_retains_the_old_models_settings(hermes_agent_context):
                          'new': {'enabled': True, 'effort': 'high'}}
 
 
-def test_disabled_reasoning_pair_proof_is_invalid_after_reasoning_is_enabled(tmp_path, hermes_agent_context):
+@pytest.mark.parametrize('legacy', [False, True])
+def test_disabled_reasoning_pair_proof_is_invalid_after_reasoning_is_enabled(tmp_path, hermes_agent_context, legacy):
     config = config_with_reasoning('none')
     probe, live, written = proof_run(tmp_path, config)
     assert probe.run(PROVIDER, OLD, NEW)
     assert written[0]['sealed_reasoning_observed'] is False
+    assert written[0]['reasoning_applied'] is False
+    if legacy:
+        written[0].pop('reasoning_applied')
+        written[0]['encrypted_reasoning_replayed'] = False
     config['plugins'] = {'entries': {'shadow': {'settings': {'verified_gradual_pairs': written}}}}
     old, new = Route(PROVIDER, OLD, BASE, MODE), Route(PROVIDER, NEW, BASE, MODE)
     assert verified_pair_from_config(lambda: config, old, new)

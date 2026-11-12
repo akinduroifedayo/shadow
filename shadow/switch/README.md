@@ -49,7 +49,9 @@ save fails, diagnostic evidence can remain, but it does not authorize a switch.
 
 A saved test's route must still match that entry's provider, model, base URL, and
 API mode in the same old-to-new order. The entry must record matching reasoning
-settings. Changing the current model's reasoning settings requires a new proof.
+settings. The `reasoning` field records the profile settings used to match proofs.
+`reasoning_applied: false` means the check did not apply those settings to its completions.
+Changing the current model's reasoning settings requires a new proof.
 Older entries without reasoning settings also require a new proof. Keep other
 verified entries in the list.
 
@@ -76,6 +78,7 @@ plugins:
             reasoning:
               old: null
               new: null
+            reasoning_applied: false
             sealed_reasoning_observed: false
             evidence: pair-evidence.json
 ```
