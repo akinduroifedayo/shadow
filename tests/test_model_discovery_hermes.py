@@ -49,9 +49,9 @@ def test_real_hermes_discovers_gemini_before_any_provider_lookup(tmp_path):
 
 
 @pytest.mark.parametrize('warm_cache', [False, True])
-@pytest.mark.parametrize('preload', ['registry', 'listing', 'lookup'])
+@pytest.mark.parametrize('preload', ['none', 'registry', 'listing', 'lookup'])
 def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
-    """Preload requests' IPv6 capability check, then trap all Hermes discovery effects."""
+    """Trap discovery effects, recording the documented Hermes initialization reads."""
     if not HERMES_SOURCE:
         pytest.skip('set SHADOW_HERMES_SOURCE to a Hermes source checkout for the offline safety test')
     source = Path(HERMES_SOURCE).resolve()
@@ -99,9 +99,18 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
         from pathlib import Path
         import sys
         import threading
+        import traceback
 
         class ForbiddenDiscoveryEffect(BaseException):
             pass
+
+        accepted_hermes_reads = set()
+        def initializing_hermes(module, function):
+            frames = {(Path(frame.filename), frame.name) for frame in traceback.extract_stack()}
+            source = Path(sys.argv[3])
+            return (sys.argv[2] == 'none'
+                    and (source / 'providers' / '__init__.py', 'bound_registry_key') in frames
+                    and (source / module, function) in frames)
 
         def audit(event, args):
             if event.startswith('socket.'):
@@ -109,6 +118,10 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
             if event == 'open' and isinstance(args[0], (str, bytes)):
                 path = Path(os.fsdecode(args[0]))
                 if path.name in {'.env', 'auth.json'} or '.codex' in path.parts:
+                    if (path == dotenv and args[1] == 'r'
+                            and initializing_hermes('plugins/model-providers/router/__init__.py', '<module>')):
+                        accepted_hermes_reads.add('.env')
+                        return
                     raise ForbiddenDiscoveryEffect('discovery opened a credential file')
 
         import requests
@@ -123,12 +136,15 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
         elif sys.argv[2] == 'listing':
             profiles = {profile.name: profile for profile in list_providers()}
             assert profiles['openrouter'].auth_type == 'api_key'
-        else:
+        elif sys.argv[2] == 'lookup':
             assert get_provider_profile('openrouter').auth_type == 'api_key'
         sys.addaudithook(audit)
         original_getitem = type(os.environ).__getitem__
         def environment_value(self, key):
             if key in {'SHADOW_FORBIDDEN_SECRET', 'SHADOW_TEST_PRESENT_KEY', 'OPENROUTER_API_KEY'}:
+                if initializing_hermes('hermes_cli/config.py', 'load_config'):
+                    accepted_hermes_reads.add(key)
+                    return original_getitem(self, key)
                 raise ForbiddenDiscoveryEffect('discovery resolved a secret config reference')
             return original_getitem(self, key)
         type(os.environ).__getitem__ = environment_value
@@ -160,6 +176,9 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
         for name in ('gpt-future', 'gpt-next', 'gpt-6.1-sol', 'gpt-6.1-terra'):
             assert catalog.require('nous', name) == Model('nous', name)
         assert not any(model.provider == 'unconfigured' for model in catalog.models)
+        assert accepted_hermes_reads == (
+            {'.env', 'SHADOW_FORBIDDEN_SECRET', 'SHADOW_TEST_PRESENT_KEY'} if sys.argv[2] == 'none' else set()
+        ), accepted_hermes_reads
         if sys.argv[1] == 'warm':
             assert any(model.model == 'gpt-cached' for model in catalog.models)
         print('real Hermes local-only discovery passed')
@@ -167,7 +186,7 @@ def test_real_hermes_discovery_is_local_only(tmp_path, warm_cache, preload):
     repo = Path(__file__).resolve().parents[1]
     import_paths = [str(repo), str(source)]
     interpreter = os.environ.get('SHADOW_HERMES_PYTHON', sys.executable)
-    result = subprocess.run([interpreter, '-c', script, 'warm' if warm_cache else 'cold', preload],
+    result = subprocess.run([interpreter, '-c', script, 'warm' if warm_cache else 'cold', preload, str(source)],
                             cwd=tmp_path, capture_output=True, text=True, timeout=30,
                             env={'PATH': '/usr/bin:/bin', 'HOME': str(tmp_path), 'HERMES_HOME': str(profile),
                                  'PYTHONPATH': ':'.join(import_paths), 'PYTHONDONTWRITEBYTECODE': '1',
