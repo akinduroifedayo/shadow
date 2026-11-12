@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 
+BANNED_NAMES = {'read_config_doc', 'write_config_key'}
 BANNED_MODULES = {'gateway.run', 'run_agent', 'hermes_cli.config_backend'}
 
 
@@ -34,6 +35,8 @@ def scan(source, filename='<snippet>'):
             if banned(module):
                 report(node, f'banned module {module}')
             for alias in node.names:
+                if alias.name in BANNED_NAMES:
+                    report(node, f'banned name {alias.name}')
                 if banned(module + '.' + alias.name):
                     report(node, f'banned module {module}.{alias.name}')
                 bindings[alias.asname or alias.name] = module + '.' + alias.name
@@ -61,6 +64,8 @@ def scan(source, filename='<snippet>'):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and banned(node.value):
             report(node, f'banned module reference {node.value}')
         elif isinstance(node, ast.Attribute):
+            if node.attr in BANNED_NAMES:
+                report(node, f'banned name {node.attr}')
             if banned(module_reference(node)):
                 report(node, f'banned module reference {module_reference(node)}')
             if private(node.attr) and imported_root(node.value):
@@ -105,3 +110,9 @@ class Example:
     def run(self):
         return self._x, _helper(), os.__name__
 ''') == []
+
+
+def test_scanner_bans_backend_reexports_from_any_module():
+    for name in BANNED_NAMES:
+        assert scan(f'from hermes_cli.config import {name} as public_name')
+        assert scan(f'import another_module as config; config.{name}()')

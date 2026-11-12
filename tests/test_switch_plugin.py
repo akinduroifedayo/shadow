@@ -152,7 +152,7 @@ def plugin(monkeypatch, tmp_path):
     session_env = {}
     modules["gateway.session_context"].get_session_env = lambda key, default="": session_env.get(key, default)
     modules["hermes_constants"].get_hermes_home = lambda: tmp_path
-    modules["hermes_cli.config"].read_config_doc = lambda path: config()
+    modules["hermes_cli.config"].read_raw_config_readonly = lambda: config()
     modules["plugins.plugin_storage"].plugin_db = lambda *args: sqlite3.connect(":memory:")
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
