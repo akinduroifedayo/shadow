@@ -308,38 +308,21 @@ def run_command(service, *, terminal, yes, old_model=None, new_model=None, provi
     if home is None:
         return _command_failure('doctor.pair_fail', 'profile_home_unavailable')
     probe = PairProbe(agent_factory=_agent_factory, register_hook=service.ctx.register_hook,
-                      write=lambda entry: save_pair(home / 'config.yaml', entry),
+                      write=lambda entry: save_pair(service.ctx, entry),
                       evidence_dir=home / 'plugin-data' / 'shadow', config=config)
     passed = probe.run(provider, pair[0], pair[1])
     text = copy('doctor.pair_pass') if passed else copy('doctor.pair_fail') + '\n' + copy('switch.doctor.pair_failure_reason', reason=probe.reason_code)
     return text if terminal else line + '\n' + text
 
 
-def save_pair(config_path, entry):
-    """Add a proof through the profile's config backend and its write guards."""
+def save_pair(ctx, entry):
     try:
-        from hermes_cli.config_backend import read_config_doc, write_config_key
-
-        path = Path(config_path)
-        data = read_config_doc(path) or {}
-        _store(data, entry)
-        pairs = data['plugins']['entries']['shadow']['settings']['verified_gradual_pairs']
-        write_config_key(path, 'plugins.entries.shadow.settings.verified_gradual_pairs', pairs)
+        pairs = ctx.get_config('verified_gradual_pairs', [])
+        if not isinstance(pairs, list):
+            return False
+        pairs = [item for item in pairs if not (isinstance(item, dict)
+                 and item.get('old') == entry['old'] and item.get('new') == entry['new'])]
+        ctx.set_config('verified_gradual_pairs', [*pairs, entry])
         return True
     except Exception:
         return False
-
-
-def _store(data, entry):
-    if not isinstance(data, dict):
-        raise ValueError('config')
-    plugins = data.setdefault('plugins', {})
-    entries = plugins.setdefault('entries', {})
-    shadow = entries.setdefault('shadow', {})
-    settings = shadow.setdefault('settings', {})
-    pairs = settings.get('verified_gradual_pairs', [])
-    if not isinstance(pairs, list):
-        raise ValueError('verified_gradual_pairs must be a list')
-    pairs = [item for item in pairs if not (isinstance(item, dict) and item.get('old') == entry['old'] and item.get('new') == entry['new'])]
-    pairs.append(entry)
-    settings['verified_gradual_pairs'] = pairs

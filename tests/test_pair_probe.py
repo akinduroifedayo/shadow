@@ -542,21 +542,20 @@ def test_pair_accepts_capitalization_and_sentence_punctuation(tmp_path, first, s
 
 
 @pytest.fixture
-def pair_config_backend(tmp_path, monkeypatch):
-    from hermes_cli import config_backend
-
-    key = 'plugins.entries.shadow.settings.verified_gradual_pairs'
+def pair_config_backend():
     state = SimpleNamespace(document={'model': {'default': 'user-model'}, 'plugins': {'entries': {
         'shadow': {'settings': {'verified_gradual_pairs': []}}}}}, writes=[], refuse=False)
 
-    def write(home, changes):
-        if state.refuse:
-            raise config_backend.ConfigLockedError(key, 'organization')
-        state.writes.append((home, changes))
-        state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs'] = changes.set[key]
+    def get_config(key, default=None):
+        return state.document['plugins']['entries']['shadow']['settings'].get(key, default)
 
-    backend = SimpleNamespace(read_user_doc=lambda home: copy.deepcopy(state.document), write_changes=write)
-    monkeypatch.setattr(config_backend, 'get_config_backend', lambda: backend)
+    def set_config(key, value):
+        if state.refuse:
+            raise PermissionError('locked')
+        state.writes.append((key, value))
+        state.document['plugins']['entries']['shadow']['settings'][key] = value
+
+    state.ctx = SimpleNamespace(get_config=get_config, set_config=set_config)
     return state
 
 
@@ -571,22 +570,20 @@ def test_save_pair_uses_selected_backend_and_changes_only_proofs(tmp_path, pair_
     pairs = state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs']
     pairs.append({'old': {'model': 'kept'}, 'new': {'model': 'kept'}, 'probe_passed': True, 'evidence': 'older.json'})
     path = tmp_path / 'config.yaml'
-    assert save_pair(path, _proof())
-    assert save_pair(path, _proof())
+    assert save_pair(state.ctx, _proof())
+    assert save_pair(state.ctx, _proof())
     pairs = state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs']
     assert len(pairs) == 2 and pairs[0]['old']['model'] == 'kept' and pairs[1] == _proof()
     assert state.document['model']['default'] == 'user-model'
     assert not path.exists()
-    assert all(home == tmp_path and changes.document is None
-               and set(changes.set) == {'plugins.entries.shadow.settings.verified_gradual_pairs'}
-               for home, changes in state.writes)
+    assert all(key == 'verified_gradual_pairs' for key, value in state.writes)
 
 
 def test_save_pair_honors_backend_write_refusal(tmp_path, pair_config_backend):
     state = pair_config_backend
     state.refuse = True
     original = copy.deepcopy(state.document)
-    assert save_pair(tmp_path / 'config.yaml', _proof()) is False
+    assert save_pair(state.ctx, _proof()) is False
     assert state.document == original and state.writes == []
     assert not (tmp_path / 'config.yaml').exists()
 
@@ -596,7 +593,7 @@ def test_save_pair_refuses_non_list_pairs_without_changing_config(tmp_path, pair
     state = pair_config_backend
     state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs'] = existing
     original = copy.deepcopy(state.document)
-    assert save_pair(tmp_path / 'config.yaml', _proof()) is False
+    assert save_pair(state.ctx, _proof()) is False
     assert state.document == original and state.writes == []
 
 

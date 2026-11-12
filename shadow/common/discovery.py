@@ -140,13 +140,12 @@ def _credential_reason(provider, config, profile, metadata, environment_names):
 
 
 def _local_context():
-    from hermes_constants import get_hermes_home
-    from hermes_cli.config_backend import read_config_doc
+    from hermes_cli.config import read_raw_config_readonly
     from hermes_cli.config_providers import coerce_provider_id, stringify_provider_map
     from hermes_cli.inventory import ConfigContext
 
     # load_picker_context expands credential references throughout the config.
-    config = read_config_doc(Path(get_hermes_home()) / 'config.yaml') or {}
+    config = read_raw_config_readonly() or {}
     model = config.get('model', {})
     if isinstance(model, str):
         model = {'default': model}
