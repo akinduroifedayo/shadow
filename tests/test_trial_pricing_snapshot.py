@@ -1,11 +1,12 @@
 from collections import Counter
 from decimal import Decimal
 from types import SimpleNamespace
+import sys
 
 import pytest
 
 from fixtures import OUTSIDE, FakeContext, selection
-from shadow.common.models import Model, Price
+from shadow.common.models import Model
 from shadow.common.storage import Store
 from shadow.trial.cards import render_start
 from shadow.trial.engine import TrialEngine
@@ -28,15 +29,14 @@ def pricing(monkeypatch):
         return catalog if provider == 'openrouter' else {}
 
     module.get_pricing_for_provider = lookup
-    def known_price(model):
-        row = module.get_pricing_for_provider(model.provider, cached_only=True).get(model.model)
-        if not row:
-            return None
-        return Price(*(Decimal(row[key]) * 1_000_000 for key in
-                       ('prompt', 'completion', 'input_cache_read', 'input_cache_write')),
-                     plan=model.plan, request_cost=Decimal(module.request_fees.get(model.model, '0')))
+    def entry(model, *, provider):
+        assert provider == 'openrouter'
+        return SimpleNamespace(request_cost=Decimal(module.request_fees[model])
+                               if model in module.request_fees else None) if model in catalog else None
 
-    monkeypatch.setattr('shadow.trial.usage.price_for', known_price)
+    module.get_pricing_entry = entry
+    monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', module)
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing', module)
     return module, catalog, calls
 
 
@@ -58,6 +58,7 @@ def fail_lookup(module):
     def unavailable(*args, **kwargs):
         raise AssertionError('Hermes pricing must not run after prepare')
     module.get_pricing_for_provider = unavailable
+    module.get_pricing_entry = unavailable
 
 
 def test_prepare_resolves_each_model_once(pricing, tmp_path):

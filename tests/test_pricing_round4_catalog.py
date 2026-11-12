@@ -1,5 +1,5 @@
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -23,6 +23,8 @@ def cached_catalog(monkeypatch):
         return catalog if provider == 'openrouter' else {}
 
     pricing.get_pricing_for_provider = lookup
+    pricing.get_pricing_entry = lambda model, *, provider: SimpleNamespace(request_cost=None)
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing', pricing)
     monkeypatch.setitem(sys.modules, 'hermes_cli', package)
     monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', pricing)
     return catalog
@@ -67,11 +69,35 @@ def test_known_context_tier_cannot_start_from_flat_openrouter_rates(
     assert not ctx.subagent_lifecycle.launches and not ctx.llm.calls
 
 
-def test_flat_openrouter_model_without_public_request_fee_cannot_start(tmp_path, cached_catalog):
+def test_flat_openrouter_model_with_public_request_fee_can_start(tmp_path, cached_catalog):
     model, ctx, engine, record = prepare_catalog_trial(
         tmp_path, cached_catalog, 'nousresearch/hermes-3-llama-3.1-405b')
-    assert not record['can_start']
-    assert record['estimate']['total'] is None
-    assert price_for(model) is None
-    assert '[Start]' not in render_start(record, isolation_verified=True)
+    assert record['can_start']
+    assert record['estimate']['total'] > 0
+    assert price_for(model).request_cost == 0
+    assert '[Start]' in render_start(record, isolation_verified=True)
     assert not ctx.subagent_lifecycle.launches and not ctx.llm.calls
+
+
+@pytest.mark.parametrize('fee,expected', [
+    (None, '0'), ('0', '0'), ('0.002', '0.002'), ('-1', None),
+    ('NaN', None), ('Infinity', None),
+])
+def test_public_openrouter_request_cost_is_checked(monkeypatch, fee, expected):
+    from decimal import Decimal
+    from shadow.common.models import _openrouter_request_fee
+    calls = []
+    def entry(model, *, provider):
+        calls.append((model, provider))
+        return SimpleNamespace(request_cost=None if fee is None else Decimal(fee))
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing', SimpleNamespace(get_pricing_entry=entry))
+    value = _openrouter_request_fee('vendor/model')
+    assert value == (None if expected is None else Decimal(expected))
+    assert calls == [('vendor/model', 'openrouter')]
+
+
+def test_missing_public_openrouter_entry_is_unpriced(monkeypatch):
+    from shadow.common.models import _openrouter_request_fee
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing',
+                        SimpleNamespace(get_pricing_entry=lambda *args, **kwargs: None))
+    assert _openrouter_request_fee('missing') is None

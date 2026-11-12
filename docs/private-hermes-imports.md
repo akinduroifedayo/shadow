@@ -17,7 +17,7 @@ configuration-backend modules. It has no exceptions.
 | Sealed reasoning | `pre_auxiliary_call` and `post_auxiliary_call` | Public payloads omit sealed reasoning. Required sealed evidence fails with `sealed_reasoning_unobservable` before a completion. Evidence always records sealed reasoning as unobserved. |
 | Pair trust | `agent.plugin_llm.PluginLlmTrustError` | Provider and model overrides require the corresponding `plugins.entries.shadow.llm.allow_*_override` grants. Refusal reports `llm_trust_denied`. |
 | Hook deadline | `hermes_cli.config.load_config_readonly` | Reads `plugins.hook_callback_timeout`. Uses 30 seconds by default, zero to disable the deadline, 30 for negative or invalid values, and a 600-second maximum, matching the reference host. |
-| Request fee | No suitable public cache-only reader | Returns unknown. OpenRouter tests cannot start without a known request fee. `fetch_model_metadata(force_refresh=False)` can fetch when its cache is stale, so Shadow does not call it. |
+| Request fee | `agent.usage_pricing.get_pricing_entry` | Uses `request_cost`, counting an absent fee as zero when the entry exists. Missing entries remain unknown. Hermes uses the same reader each turn. A stale 1h OpenRouter cache may refresh once at preparation with a bounded timeout. |
 
 Possible upstream API requests remain local ideas. No issue is required to use
 Shadow's current fallback behavior.

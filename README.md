@@ -228,7 +228,7 @@ Run `hermes shadow doctor` first. It prints what's ready and the exact command t
 | A capability is not granted. | Run `hermes plugins capabilities shadow` to inspect grants. Run `hermes plugins enable shadow` interactively to review consent, then follow doctor's remaining fixes. |
 | The setup check gets no result from a running gateway. | Run `hermes gateway restart`, or `hermes -p <profile> gateway restart` for a named profile, then repeat the check. Shadow does not reload the gateway. |
 | Start is locked. | Follow doctor. Run `hermes shadow doctor --verify` for the live isolation check. Keep at least 20 eligible completed turns in the chosen days. |
-| Price is unknown. | Pick a model with a known price. OpenRouter request fees stay unknown because Hermes has no public offline reader for them. |
+| Price is unknown. | Pick a model with a known price. OpenRouter request fees use Hermes's public pricing reader. A stale cache may refresh once at preparation with a bounded timeout. |
 | The service tier cannot be priced. | Use the provider's standard tier in Hermes, then prepare the test again. |
 | A test stopped. | Run `hermes shadow status` and `hermes shadow results <id>`. Read the stop reason. Raise the cap for a fresh test if needed, or resolve provider access and rate limits. |
 | The judge couldn't be reached. | If the first two judge requests fail with no answer, Shadow stops the test and nothing is switched. Check that the judge model still works in Hermes, or pick another with `--judge`, then start a new test. |

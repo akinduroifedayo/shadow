@@ -155,8 +155,16 @@ _CONTEXT_TIERED_MODELS = frozenset({
 
 
 def _openrouter_request_fee(model_id):
-    # Hermes has no public cache-only reader for per-request fees.
-    return None
+    try:
+        from agent.usage_pricing import get_pricing_entry
+        # Hermes uses this each turn; a stale 1h cache may refresh once with a bounded timeout.
+        entry = get_pricing_entry(model_id, provider='openrouter')
+        if entry is None:
+            return None
+        fee = Decimal(0) if entry.request_cost is None else Decimal(entry.request_cost)
+        return fee if fee.is_finite() and fee >= 0 else None
+    except Exception:
+        return None
 
 
 def price_for(model):

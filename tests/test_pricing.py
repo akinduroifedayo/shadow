@@ -2,7 +2,7 @@ import json
 import sys
 from dataclasses import replace
 from decimal import Decimal
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -35,13 +35,11 @@ def hermes_pricing(monkeypatch):
     module.get_pricing_for_provider = get_pricing_for_provider
     agent = ModuleType('agent')
     agent.__path__ = []
-    metadata = ModuleType('agent.model_metadata')
-    def unexpected_fetch(*args, **kwargs):
-        pytest.fail('Shadow must not fetch OpenRouter metadata')
-
-    metadata.fetch_model_metadata = unexpected_fetch
+    pricing = ModuleType('agent.usage_pricing')
+    pricing.get_pricing_entry = lambda model, *, provider: (
+        SimpleNamespace(request_cost=None) if model in catalogs.get(provider, {}) else None)
     monkeypatch.setitem(sys.modules, 'agent', agent)
-    monkeypatch.setitem(sys.modules, 'agent.model_metadata', metadata)
+    monkeypatch.setitem(sys.modules, 'agent.usage_pricing', pricing)
     monkeypatch.setitem(sys.modules, 'hermes_cli', package)
     monkeypatch.setitem(sys.modules, 'hermes_cli.models_pricing', module)
     return catalogs
@@ -52,15 +50,15 @@ def prepare(tmp_path, current=CURRENT, trial=TRIAL, judge=OUTSIDE):
     return engine.prepare(selection(tmp_path, 20), current, trial, [judge])
 
 
-def test_public_token_rates_without_a_public_request_fee_block_start(tmp_path, hermes_pricing):
+def test_public_token_rates_and_pricing_entry_allow_start(tmp_path, hermes_pricing):
     trial = FLAT_MODELS['trial']
     hermes_pricing['openrouter'] = {trial.model: {
         'prompt': '0.000002', 'completion': '0.000006',
         'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
     record = prepare(tmp_path, trial=trial)
-    assert not record['can_start'] and record['estimate']['total'] is None
-    assert price_for(trial) is None
-    assert '[Start]' not in render_start(record, isolation_verified=True)
+    assert record['can_start'] and record['estimate']['total'] > 0
+    assert price_for(trial).request_cost == 0
+    assert '[Start]' in render_start(record, isolation_verified=True)
 
 
 @pytest.mark.parametrize('missing', ['current', 'trial', 'judge'])
@@ -159,7 +157,7 @@ def test_invalid_hermes_rows_are_unknown_and_block_start(tmp_path, hermes_pricin
 def test_proxy_prices_keep_namespace_date_and_free_suffix_identity(hermes_pricing, priced_id, other_id):
     hermes_pricing['openrouter'] = {priced_id: {'prompt': '0.000002', 'completion': '0.000006', 'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
 
-    assert price_for(Model('openrouter', priced_id)) is None
+    assert price_for(Model('openrouter', priced_id)) is not None
     assert price_for(Model('openrouter', other_id)) is None
 
 
@@ -256,13 +254,14 @@ def test_unknown_cache_rate_blocks_start(tmp_path, hermes_pricing, bucket, rate)
 
 
 @pytest.mark.parametrize('role', ['current', 'trial', 'judge'])
-def test_unknown_request_fee_blocks_each_role_without_fetching_metadata(tmp_path, hermes_pricing, role):
+def test_missing_pricing_entry_blocks_each_role(tmp_path, hermes_pricing, role):
     models = {'current': CURRENT, 'trial': TRIAL, 'judge': OUTSIDE}
     models[role] = FLAT_MODELS[role]
     model = models[role]
     hermes_pricing['openrouter'] = {model.model: {
         'prompt': '0.000002', 'completion': '0.000006',
         'input_cache_read': '0.000001', 'input_cache_write': '0.000003'}}
+    sys.modules['agent.usage_pricing'].get_pricing_entry = lambda *args, **kwargs: None
     record = prepare(tmp_path, **models)
     assert not record['can_start']
     assert record['estimate']['total'] is None
