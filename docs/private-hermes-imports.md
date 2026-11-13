@@ -29,6 +29,9 @@ The test records and asserts these fixture reads only under `bound_registry_key(
 and their specific Hermes callers. Socket use, thread creation, `auth.json` reads,
 other credential-file reads, and secret reads outside those callers still fail.
 The preloaded variants permit none of these effects.
+The bound resolver's periodic folder check can repeat the `load_config()`
+secret-reference read after a scan skipped a disabled plugin, and a rescan's
+plugin imports can read `.env`.
 
 Possible upstream API requests remain local ideas. No issue is required to use
 Shadow's current fallback behavior.
