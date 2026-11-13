@@ -17,8 +17,8 @@ def passed_checks():
 
 @pytest.fixture
 def runtime(monkeypatch):
-    config = {'compression': {'checkpoint_required': False}, 'delegation': {}, 'memory': {}, 'plugins': {'enabled': ['shadow', 'context']}}
-    plugins = [{'key': 'shadow', 'version': '0.1.0', 'enabled': True}, {'key': 'context', 'version': '1.0.0', 'enabled': True}]
+    config = {'compression': {'checkpoint_required': False}, 'delegation': {}, 'memory': {}, 'plugins': {'enabled': ['shadow-trial', 'context']}}
+    plugins = [{'key': 'shadow-trial', 'version': '0.1.0', 'enabled': True}, {'key': 'context', 'version': '1.0.0', 'enabled': True}]
     config_module = ModuleType('hermes_cli.config')
     config_module.load_config_readonly = lambda: config
     manager_module = ModuleType('hermes_cli.plugins')
@@ -58,7 +58,7 @@ def test_saving_pair_proof_keeps_isolation_until_a_real_setting_changes(tmp_path
 
     config, _ = runtime
     config['plugins']['entries'] = {
-        'shadow': {'allow_gateway_injection': True, 'settings': {}},
+        'shadow-trial': {'allow_gateway_injection': True, 'settings': {}},
         'context': {'settings': {'include_memory': False}},
     }
     config['memory']['memory_enabled'] = False
@@ -72,7 +72,7 @@ def test_saving_pair_proof_keeps_isolation_until_a_real_setting_changes(tmp_path
     assert launcher.isolation_verified
     assert config == saved
     if change == 'shadow_permission':
-        config['plugins']['entries']['shadow']['allow_gateway_injection'] = False
+        config['plugins']['entries']['shadow-trial']['allow_gateway_injection'] = False
     elif change == 'other_plugin':
         config['plugins']['entries']['context']['settings']['include_memory'] = True
     elif change == 'memory':
@@ -82,7 +82,7 @@ def test_saving_pair_proof_keeps_isolation_until_a_real_setting_changes(tmp_path
     assert launcher.isolation_verified is False
 
 
-@pytest.mark.parametrize('initial_entries', [None, {}, {'shadow': {}}, {'shadow': {'settings': {}}}])
+@pytest.mark.parametrize('initial_entries', [None, {}, {'shadow-trial': {}}, {'shadow-trial': {'settings': {}}}])
 def test_shadow_settings_do_not_revoke_isolation_when_their_containers_are_new(tmp_path, runtime, initial_entries):
     config, _ = runtime
     if initial_entries is not None:
@@ -90,12 +90,12 @@ def test_shadow_settings_do_not_revoke_isolation_when_their_containers_are_new(t
     isolation.write_record(tmp_path, isolation.current_identity('demo'), passed_checks())
     launcher = ControllerLauncher('demo', tmp_path)
     assert launcher.isolation_verified
-    settings = config['plugins'].setdefault('entries', {}).setdefault('shadow', {}).setdefault('settings', {})
+    settings = config['plugins'].setdefault('entries', {}).setdefault('shadow-trial', {}).setdefault('settings', {})
     settings.update(web_lookups=False, future_shadow_setting={'value': 1})
     saved = deepcopy(config)
     assert launcher.isolation_verified
     assert config == saved
-    del config['plugins']['entries']['shadow']['settings']
+    del config['plugins']['entries']['shadow-trial']['settings']
     assert launcher.isolation_verified
 
 

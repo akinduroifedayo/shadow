@@ -11,8 +11,8 @@ from acceptance.support import Check, Context, _STATE, install_stubs, restore_st
 from shadow import register
 
 SETTINGS = (
-    "plugins.entries.shadow.llm.allow_provider_override",
-    "plugins.entries.shadow.llm.allow_model_override",
+    "plugins.entries.shadow-trial.llm.allow_provider_override",
+    "plugins.entries.shadow-trial.llm.allow_model_override",
 )
 
 
@@ -26,15 +26,15 @@ def _config(missing=None):
             {"provider": "anthropic", "model": "claude-sonnet-4-5", "reachable": True},
         ]},
     }
-    if missing == "plugins.entries.shadow.allow_gateway_injection":
+    if missing == "plugins.entries.shadow-trial.allow_gateway_injection":
         shadow["allow_gateway_injection"] = False
-    elif missing == "plugins.entries.shadow.llm.allow_provider_override":
+    elif missing == "plugins.entries.shadow-trial.llm.allow_provider_override":
         shadow["llm"]["allow_provider_override"] = False
-    elif missing == "plugins.entries.shadow.llm.allow_model_override":
+    elif missing == "plugins.entries.shadow-trial.llm.allow_model_override":
         shadow["llm"]["allow_model_override"] = False
     return {
         "model": {"provider": "openai-codex", "default": "gpt-6.1-sol"},
-        "plugins": {"entries": {"shadow": shadow}},
+        "plugins": {"entries": {"shadow-trial": shadow}},
     }
 
 
@@ -57,7 +57,7 @@ def _doctor(probe, home):
         before = deepcopy(_STATE["config"])
         text = ctx.commands["shadow"]("doctor")
         probe.expect(setting in text, f"doctor did not name {setting}")
-        fix = "hermes plugins enable shadow"
+        fix = "hermes plugins enable shadow-trial"
         probe.expect(fix in text, f"doctor did not give the fix line for {setting}")
         for other in SETTINGS:
             if other != setting:

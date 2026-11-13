@@ -91,10 +91,10 @@ def configuration_hash():
         compression = config.get('compression') or {}
         plugin_config = deepcopy(config.get('plugins', {}))
         entries = plugin_config.get('entries', {})
-        shadow = entries.get('shadow', {})
+        shadow = entries.get('shadow-trial', {})
         shadow.pop('settings', None)
         if not shadow:
-            entries.pop('shadow', None)
+            entries.pop('shadow-trial', None)
         if not entries:
             plugin_config.pop('entries', None)
         plugins = [

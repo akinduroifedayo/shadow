@@ -26,7 +26,7 @@ def isolated_runner_environment(monkeypatch):
 
 
 def config():
-    return {"plugins": {"entries": {"shadow": {"allow_gateway_injection": True, "llm": {
+    return {"plugins": {"entries": {"shadow-trial": {"allow_gateway_injection": True, "llm": {
         "allow_provider_override": True, "allow_model_override": True}}}}}
 
 
@@ -51,7 +51,7 @@ def test_doctor_names_each_missing_setting_and_exact_fix_without_changes(setting
     assert missing[0].setting == setting
     text = doctor(cfg)
     assert setting in text
-    fix = "hermes plugins enable shadow"
+    fix = "hermes plugins enable shadow-trial"
     assert fix in text
     assert "Nothing changed." in text
     assert cfg == before
@@ -113,7 +113,7 @@ def test_exact_pair_proof_checks_both_routes_and_evidence(hermes_agent_context):
     cfg = config()
     proof = {"old": asdict(OLD), "new": asdict(NEW), "probe_passed": True, "evidence": "fixture-probe",
              "reasoning": {"old": None, "new": None}, "sealed_reasoning_observed": False}
-    cfg["plugins"]["entries"]["shadow"]["settings"] = {"verified_gradual_pairs": [proof]}
+    cfg["plugins"]["entries"]["shadow-trial"]["settings"] = {"verified_gradual_pairs": [proof]}
     assert verified_pair_from_config(lambda: cfg, OLD, NEW)
     assert not verified_pair_from_config(lambda: cfg, NEW, OLD)
     proof["new"]["api_mode"] = "responses"
@@ -323,7 +323,7 @@ def test_bare_shadow_shows_help_and_runs_read_only_setup_check(plugin):
     service.config_reader = lambda: {}
     text = ctx.commands["shadow"]("")
     assert "/shadow status" in text
-    assert "hermes plugins enable shadow" in text
+    assert "hermes plugins enable shadow-trial" in text
     assert "allow_gateway_injection" not in text
     assert "Nothing changed." in text
     assert service.engine.record is None

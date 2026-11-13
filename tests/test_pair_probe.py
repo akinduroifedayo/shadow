@@ -243,9 +243,9 @@ def test_pair_trust_refusal_explains_both_grants(tmp_path, monkeypatch, profile,
     monkeypatch.setattr(pair_probe, 'profile_home', lambda: tmp_path)
     output = run_command(_service(ctx=live), terminal=terminal, yes=True, old_model=OLD, new_model=NEW)
     assert 'llm_trust_denied' in output
-    assert 'plugins.entries.shadow.llm.allow_provider_override' in output
-    assert 'plugins.entries.shadow.llm.allow_model_override' in output
-    assert command + ' plugins enable shadow' in output
+    assert 'plugins.entries.shadow-trial.llm.allow_provider_override' in output
+    assert 'plugins.entries.shadow-trial.llm.allow_model_override' in output
+    assert command + ' plugins enable shadow-trial' in output
     assert 'secret-exception-canary' not in output
 
 
@@ -326,16 +326,16 @@ def test_trial_command_delegates_the_pair_check(tmp_path):
 @pytest.fixture
 def pair_config_backend():
     state = SimpleNamespace(document={'model': {'default': 'user-model'}, 'plugins': {'entries': {
-        'shadow': {'settings': {'verified_gradual_pairs': []}}}}}, writes=[], refuse=False)
+        'shadow-trial': {'settings': {'verified_gradual_pairs': []}}}}}, writes=[], refuse=False)
 
     def get_config(key, default=None):
-        return state.document['plugins']['entries']['shadow']['settings'].get(key, default)
+        return state.document['plugins']['entries']['shadow-trial']['settings'].get(key, default)
 
     def set_config(key, value):
         if state.refuse:
             raise PermissionError('locked')
         state.writes.append((key, value))
-        state.document['plugins']['entries']['shadow']['settings'][key] = value
+        state.document['plugins']['entries']['shadow-trial']['settings'][key] = value
 
     state.ctx = SimpleNamespace(get_config=get_config, set_config=set_config)
     return state
@@ -349,12 +349,12 @@ def _proof():
 
 def test_save_pair_uses_selected_backend_and_changes_only_proofs(tmp_path, pair_config_backend):
     state = pair_config_backend
-    pairs = state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs']
+    pairs = state.document['plugins']['entries']['shadow-trial']['settings']['verified_gradual_pairs']
     pairs.append({'old': {'model': 'kept'}, 'new': {'model': 'kept'}, 'probe_passed': True, 'evidence': 'older.json'})
     path = tmp_path / 'config.yaml'
     assert save_pair(state.ctx, _proof())
     assert save_pair(state.ctx, _proof())
-    pairs = state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs']
+    pairs = state.document['plugins']['entries']['shadow-trial']['settings']['verified_gradual_pairs']
     assert len(pairs) == 2 and pairs[0]['old']['model'] == 'kept' and pairs[1] == _proof()
     assert state.document['model']['default'] == 'user-model'
     assert not path.exists()
@@ -373,7 +373,7 @@ def test_save_pair_honors_backend_write_refusal(tmp_path, pair_config_backend):
 @pytest.mark.parametrize('existing', [None, {}, 'keep this setting'])
 def test_save_pair_refuses_non_list_pairs_without_changing_config(tmp_path, pair_config_backend, existing):
     state = pair_config_backend
-    state.document['plugins']['entries']['shadow']['settings']['verified_gradual_pairs'] = existing
+    state.document['plugins']['entries']['shadow-trial']['settings']['verified_gradual_pairs'] = existing
     original = copy.deepcopy(state.document)
     assert save_pair(state.ctx, _proof()) is False
     assert state.document == original and state.writes == []

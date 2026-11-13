@@ -23,7 +23,7 @@ def record(**values):
 
 
 def ready_config():
-    return {"plugins": {"entries": {"shadow": {"allow_gateway_injection": True,
+    return {"plugins": {"entries": {"shadow-trial": {"allow_gateway_injection": True,
             "llm": {"allow_provider_override": True, "allow_model_override": True}}}}}
 
 
@@ -124,7 +124,7 @@ def test_doctor_explains_missing_runtime_registry_without_writing_config():
     config = ready_config()
     before = copy.deepcopy(config)
     text = doctor(config)
-    assert "plugins.entries.shadow.settings.verified_gradual_pairs" in text
+    assert "plugins.entries.shadow-trial.settings.verified_gradual_pairs" in text
     assert "completion proof" in text
     assert "fails closed when sealed reasoning is required" in text
     assert config == before
@@ -134,7 +134,7 @@ def test_doctor_prints_exact_pair_entry_only_after_runtime_probe():
     config = ready_config()
     before = copy.deepcopy(config)
     text = doctor(config, old=OLD, new=NEW)
-    assert "plugins.entries.shadow.settings.verified_gradual_pairs" in text
+    assert "plugins.entries.shadow-trial.settings.verified_gradual_pairs" in text
     assert '"old": ' in text and '"new": ' in text
     assert '"probe_passed": false' in text
     assert '"evidence": ""' in text
@@ -144,7 +144,7 @@ def test_doctor_prints_exact_pair_entry_only_after_runtime_probe():
 
 def test_doctor_reports_exact_pair_proof_instead_of_missing_registry(hermes_agent_context):
     config = ready_config()
-    config["plugins"]["entries"]["shadow"]["settings"] = {"verified_gradual_pairs": [
+    config["plugins"]["entries"]["shadow-trial"]["settings"] = {"verified_gradual_pairs": [
         {"old": asdict(OLD), "new": asdict(NEW), "probe_passed": True, "evidence": "runtime-run-42",
          "reasoning": {"old": None, "new": None}, "sealed_reasoning_observed": False}]}
     text = doctor(config, old=OLD, new=NEW)

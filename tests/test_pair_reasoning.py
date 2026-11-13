@@ -58,7 +58,7 @@ def test_disabled_reasoning_pair_proof_is_invalid_after_reasoning_is_enabled(tmp
     if legacy:
         written[0].pop('reasoning_applied')
         written[0]['encrypted_reasoning_replayed'] = False
-    config['plugins'] = {'entries': {'shadow': {'settings': {'verified_gradual_pairs': written}}}}
+    config['plugins'] = {'entries': {'shadow-trial': {'settings': {'verified_gradual_pairs': written}}}}
     old, new = Route(PROVIDER, OLD, BASE, MODE), Route(PROVIDER, NEW, BASE, MODE)
     assert verified_pair_from_config(lambda: config, old, new)
     config['agent']['reasoning_effort'] = 'high'
@@ -77,7 +77,7 @@ def test_live_sealed_history_requires_sealed_pair_evidence_before_rewrite(
     probe, live, written = proof_run(tmp_path, config)
     assert probe.run(PROVIDER, OLD, NEW)
     written[0]['sealed_reasoning_observed'] = sealed_verified
-    config['plugins'] = {'entries': {'shadow': {'settings': {'verified_gradual_pairs': written}}}}
+    config['plugins'] = {'entries': {'shadow-trial': {'settings': {'verified_gradual_pairs': written}}}}
     engine = Engine(Store(sqlite3.connect(':memory:')),
                     verified_pair=lambda old, new: verified_pair_from_config(lambda: config, old, new))
     engine.verified_sealed_pair = lambda old, new: verified_pair_from_config(
