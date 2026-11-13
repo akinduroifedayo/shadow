@@ -8,8 +8,8 @@ import sys
 def test_collection_from_checkout_named_shadow(tmp_path):
     repo = Path(__file__).resolve().parents[1]
     checkout = tmp_path / 'shadow'
-    shutil.copytree(repo, checkout, ignore=shutil.ignore_patterns(
-        '.git', '__pycache__', '*.pyc', '.pytest_cache'))
+    shutil.copytree(repo, checkout, symlinks=True, ignore=shutil.ignore_patterns(
+        '.git', '__pycache__', '*.pyc', '.pytest_cache', '.venv', 'venv', 'node_modules'))
     env = dict(os.environ)
     env.pop('PYTHONPATH', None)
     result = subprocess.run(
