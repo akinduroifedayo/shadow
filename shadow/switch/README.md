@@ -61,7 +61,7 @@ hand-edit `probe_passed` to true.
 ```yaml
 plugins:
   entries:
-    shadow:
+    shadow-trial:
       settings:
         verified_gradual_pairs:
           - old:
