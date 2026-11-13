@@ -42,6 +42,7 @@ def public_llm_api(monkeypatch):
 class LiveCompletions:
     def __init__(self, mutate=None):
         self.hooks, self.calls, self.tasks = {}, [], set()
+        self.registered_hooks = set()
         self.mutate = mutate or (lambda turn, result, before, after: None)
         self.llm = self
 
@@ -50,6 +51,7 @@ class LiveCompletions:
         return SimpleNamespace(dispose=lambda: self.tasks.remove(key))
 
     def register_hook(self, name, callback):
+        self.registered_hooks.add(name)
         self.hooks.setdefault(name, []).append(callback)
         return SimpleNamespace(dispose=lambda: self.hooks[name].remove(callback))
 
@@ -94,7 +96,7 @@ def test_registered_hooks_are_declared_in_manifest(tmp_path, monkeypatch):
     root = Path(__file__).resolve().parents[1]
     manifest = yaml.safe_load((root / 'plugin.yaml').read_text())
     declared = set(manifest['provides_hooks'])
-    registered = set(live.hooks)
+    registered = live.registered_hooks
     assert registered <= declared, registered - declared
     catalog = yaml.safe_load((root / 'docs' / 'catalog-entry.yaml').read_text())
     assert catalog['name'] == manifest['name']
