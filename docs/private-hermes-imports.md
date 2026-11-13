@@ -10,7 +10,7 @@ configuration-backend modules. It has no exceptions.
 | --- | --- | --- |
 | Pair settings | `ctx.get_config` and `ctx.set_config` | Proofs stay under `plugins.entries.shadow.settings.verified_gradual_pairs`. Hermes owns the write. |
 | Profile discovery | `hermes_cli.config.read_raw_config_readonly` | Reads the raw profile document without expanding credential references. After Hermes has loaded its environment, Shadow rejects a configured non-file backend before reading. Failed config reads stop discovery. It no longer reads private bootstrap readiness. |
-| Model lists | `providers.bound_registry_key()`, `providers.bound_profile_resolver()`, `agent.models_dev.fetch_models_dev(allow_network=False)`, and configured models | Keeps declared models, cached metadata, provider aliases, home-provider overrides, API-key environment names, models.dev mappings, staged local models, and live provider observations. The registry key loads built-in and enabled installed providers once, including Hermes's plugin configuration read. The bound resolver does no miss rescan. Its periodic directory check can import newly installed home-provider plugins when stamps change, just as Hermes's normal provider lookup does. Shadow adds no dotenv load or network request. |
+| Model lists | `providers.bound_registry_key()`, `providers.bound_profile_resolver()`, `agent.models_dev.fetch_models_dev(allow_network=False)`, and configured models | Keeps declared models, cached metadata, provider aliases, home-provider overrides, API-key environment names, models.dev mappings, staged local models, and live provider observations. The registry key loads built-in and enabled installed providers once, including Hermes's plugin configuration read. The bound resolver does no miss rescan. Its periodic directory check can import newly installed home-provider plugins when stamps change, just as Hermes's normal provider lookup does. First-time setup has the accepted Hermes reads below. Model metadata uses the local cache without network access. |
 | Setup gateway | `hermes_cli.gateway_runtime.discover_gateway_endpoint` | A missing setup result with a present or inaccessible gateway endpoint asks the user to restart that profile's gateway. Shadow does not reload it. |
 | Guard proof | Shadow's guard callbacks and public registration `handle.active` | Tests blocking, scoped reads, and secret refusal with an inert executor. Veto, middleware, and secret checks also require active registration handles. This does not inspect Hermes's delivery registry. |
 | Pair proof | `ctx.llm.complete`, `ctx.register_hook`, and `ctx.register_auxiliary_task` | Makes two completions and checks route observations, one attempt per completion, stop reasons, and exact reply handoff. A temporary unique task separates concurrent auxiliary traffic. It does not prove full agent-history compatibility. |
@@ -18,6 +18,20 @@ configuration-backend modules. It has no exceptions.
 | Pair trust | `agent.plugin_llm.PluginLlmTrustError` | Provider and model overrides require the corresponding `plugins.entries.shadow.llm.allow_*_override` grants. Refusal reports `llm_trust_denied`. |
 | Hook deadline | `hermes_cli.config.load_config_readonly` | Reads `plugins.hook_callback_timeout`. Uses 30 seconds by default, zero to disable the deadline, 30 for negative or invalid values, and a 600-second maximum, matching the reference host. |
 | Request fee | `agent.usage_pricing.get_pricing_entry` | Uses `request_cost`, counting an absent fee as zero when the entry exists. Missing entries remain unknown. Hermes uses the same reader each turn. A stale 1h OpenRouter cache may refresh once at preparation with a bounded timeout. |
+
+`tests/test_model_discovery_hermes.py` covers first-time provider setup inside
+`discover_models` with `preload='none'`, with both cold and warm metadata caches.
+The reference Hermes has two accepted initialization effects. Its installed-plugin
+enablement check calls `load_config()`, which reads credential references from the
+environment. Its bundled `router` provider calls `get_env_value_prefer_dotenv()`
+during import, which reads the profile's `.env` even after `load_hermes_dotenv()`.
+The test records and asserts these fixture reads only under `bound_registry_key()`
+and their specific Hermes callers. Socket use, thread creation, `auth.json` reads,
+other credential-file reads, and secret reads outside those callers still fail.
+The preloaded variants permit none of these effects.
+The bound resolver's periodic folder check can repeat the `load_config()`
+secret-reference read after a scan skipped a disabled plugin, and a rescan's
+plugin imports can read `.env`.
 
 Possible upstream API requests remain local ideas. No issue is required to use
 Shadow's current fallback behavior.

@@ -1,17 +1,9 @@
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing
-import sys
 from pathlib import Path
 from threading import Event
 
 import pytest
-
-# Pytest imports the checkout's plugin __init__.py as ``shadow`` by putting the
-# checkout's parent on sys.path. A spawned interpreter then cannot see
-# ``shadow.switch``. The inner package lives in this checkout; import that one.
-_CHECKOUT = str(Path(__file__).resolve().parents[1])
-if sys.path[:1] != [_CHECKOUT]:
-    sys.path.insert(0, _CHECKOUT)
 
 from shadow.switch import Engine, Proposal, Store
 from shadow.switch.copy import status

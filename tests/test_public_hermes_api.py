@@ -49,12 +49,20 @@ def scan(source, filename='<snippet>'):
                     external.add(alias.asname or alias.name)
 
     def imported_root(node):
+        if module_reference(node) in external:
+            return True
         if isinstance(node, ast.Attribute):
             return node.attr == 'ctx' or imported_root(node.value)
         if isinstance(node, ast.Call):
+            if (isinstance(node.func, ast.Name)
+                    and node.func.id in {'enumerate', 'zip', 'sorted', 'reversed', 'list', 'tuple', 'iter'}
+                    and any(imported_root(argument) for argument in node.args)):
+                return True
             return imported_root(node.func)
-        if isinstance(node, ast.Subscript):
+        if isinstance(node, (ast.Subscript, ast.NamedExpr)):
             return imported_root(node.value)
+        if isinstance(node, (ast.Tuple, ast.List)):
+            return any(imported_root(element) for element in node.elts)
         return isinstance(node, ast.Name) and (node.id in external or node.id in {'ctx', '__import__'})
 
     def module_reference(node):
@@ -67,17 +75,30 @@ def scan(source, filename='<snippet>'):
     def private(name):
         return name.startswith('_') and not (name.startswith('__') and name.endswith('__'))
 
+    def target_references(node):
+        if isinstance(node, ast.Starred):
+            return target_references(node.value)
+        if isinstance(node, (ast.Tuple, ast.List)):
+            return {reference for element in node.elts for reference in target_references(element)}
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            return {module_reference(node)}
+        return set()
+
     while True:
         inferred = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
                 targets, value = node.targets, node.value
-            elif isinstance(node, ast.AnnAssign):
+            elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
                 targets, value = [node.target], node.value
+            elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+                targets, value = [node.target], node.iter
+            elif isinstance(node, ast.withitem):
+                targets, value = [node.optional_vars], node.context_expr
             else:
                 continue
             if imported_root(value):
-                inferred.update(target.id for target in targets if isinstance(target, ast.Name))
+                inferred.update(reference for target in targets for reference in target_references(target))
         if inferred <= external:
             break
         external.update(inferred)
@@ -130,9 +151,11 @@ from shadow.internal import _private
 def test_scanner_allows_shadow_private_names_and_dunders():
     assert scan('''from __future__ import annotations
 from .internal import _helper
+from hermes_cli.plugins import get_plugin_manager
 import os
 class Example:
     def run(self):
+        self.pm = get_plugin_manager()
         return self._x, _helper(), os.__name__
 ''') == []
 
@@ -160,6 +183,25 @@ def test_scanner_catches_call_subscript_and_context_roots():
         "pm: object = registry.profile; pm._hooks",
         "profiles = registry.profiles; profile = profiles['x']; profile._secret",
         "pm = get_plugin_manager(); alias = pm; getattr(alias, '_hooks')",
+        "self.pm = get_plugin_manager(); self.pm._hooks",
+        "self.pm = get_plugin_manager(); getattr(self.pm, '_hooks')",
+        "self.pm: object = registry.profile; self.pm._hooks",
+        "a, b = registry.x, registry.y; a._z",
+        "[a, b] = [registry.x, registry.y]; b._z",
+        "a, *rest = registry.x, registry.y; rest[0]._z",
+        "for p in registry.profiles: p._secret",
+        "[p._secret for p in registry.profiles]",
+        "for i, p in enumerate(registry.profiles): p._secret",
+        "for p, local in zip(registry.profiles, []): p._secret",
+        "for local, p in zip([], registry.profiles): p._secret",
+        "for p in sorted(registry.profiles): p._secret",
+        "for p in reversed(registry.profiles): p._secret",
+        "for p in list(registry.profiles): p._secret",
+        "for p in tuple(registry.profiles): p._secret",
+        "for p in iter(registry.profiles): p._secret",
+        "with get_plugin_manager() as pm: pm._hooks",
+        "(pm := get_plugin_manager())._hooks",
+        "(pm := get_plugin_manager()); pm._hooks",
         "sys.modules['x']._y",
         "sys.modules.get('x')._y",
         "importlib.import_module('agent.model_metadata')._z",
