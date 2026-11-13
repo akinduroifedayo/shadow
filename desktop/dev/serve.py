@@ -3,7 +3,7 @@
     python3 desktop/dev/serve.py [port] [copy_dir ...]
 
 GET  /harness.html?s=<scenario>      the page in a Hermes-like frame
-POST /rpc/<scenario>                 {"method": "plugin.shadow.<name>", "params": {...}} -> {"result"} | {"error"}
+POST /rpc/<scenario>                 {"method": "plugin.shadow-trial.<name>", "params": {...}} -> {"result"} | {"error"}
 POST /reset                          fresh in-memory fixtures
 """
 import importlib
@@ -72,7 +72,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({'ok': True})
         scenario = self.path.removeprefix('/rpc/')
         rpc = servers.setdefault(scenario, d.DesktopRpc(d.FixtureSource(scenario, finalize_fixture=finalize_fixture), COPY))
-        name = payload['method'].removeprefix('plugin.shadow.')
+        name = payload['method'].removeprefix('plugin.shadow-trial.')
         try:
             self._json({'result': rpc.methods()[name](payload.get('params') or {}, session_id=None)})
         except Exception as exc:

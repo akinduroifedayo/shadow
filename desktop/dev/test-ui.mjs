@@ -82,7 +82,7 @@ for (const [button, intent] of [['start', 'switch'], ['compare', 'compare']]) {
     assert.equal(control.props.b.primary, button === 'start')
     control.props.onAct(control.props.b)
     await tick()
-    assert.equal(h.requests[0].method, 'plugin.shadow.act')
+    assert.equal(h.requests[0].method, 'plugin.shadow-trial.act')
     assert.equal(h.requests[0].params.action, 'start')
     assert.equal(h.requests[0].params.intent, intent)
     assert.equal(h.requests[0].params.model, 'new-model')

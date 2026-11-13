@@ -58,7 +58,7 @@ async function shot(name) {
   console.log(`shot ${name}`)
 }
 async function rpc(scenario, method, params = {}) {
-  const r = await fetch(`${BASE}/rpc/${scenario}`, { method: 'POST', body: JSON.stringify({ method: `plugin.shadow.${method}`, params }) })
+  const r = await fetch(`${BASE}/rpc/${scenario}`, { method: 'POST', body: JSON.stringify({ method: `plugin.shadow-trial.${method}`, params }) })
   return (await r.json()).result
 }
 
@@ -123,10 +123,10 @@ async function main() {
   await open('progress'); await shot('progress')
   expect(await evaluate(`document.querySelector('.prog h2').textContent`) === 'Testing: 18 of 30 turns done', 'progress heading')
   expect(await evaluate(`document.getElementById('status-slot').textContent`) === 'Shadow · test 18 of 30', 'progress status item')
-  const before = await evaluate('window.__rpc.filter(r => r.method === "plugin.shadow.page.state").length')
-  await evaluate(`window.__emit('plugin.shadow.page.changed', {mode: 'progress', test_id: 'a3f2'})`)
+  const before = await evaluate('window.__rpc.filter(r => r.method === "plugin.shadow-trial.page.state").length')
+  await evaluate(`window.__emit('plugin.shadow-trial.page.changed', {mode: 'progress', test_id: 'a3f2'})`)
   await settle()
-  const after = await evaluate('window.__rpc.filter(r => r.method === "plugin.shadow.page.state").length')
+  const after = await evaluate('window.__rpc.filter(r => r.method === "plugin.shadow-trial.page.state").length')
   expect(after === before + 1, `session event refetches page.state (${before} -> ${after})`)
   await click('[data-turn="t01"]'); await shot('progress-open-turn')
   expect(!(await evaluate(`document.querySelector('.sbs').textContent`)).includes('Hermes 4'), 'progress: opened turn stays blind')
@@ -189,7 +189,7 @@ async function main() {
   expect((await evaluate(`document.querySelector('.rows').textContent`)).includes('Judged blind by Kimi K2, your pick.'), 'start card: picked judge line')
   expect((await evaluate(`document.querySelector('.rows').textContent`)).includes('About $2.05, capped at $5.00. The judge is about $0.55.'), 'start card: cost follows the judge')
   await click('[data-action="compare"]')
-  const started = await evaluate(`window.__rpc.findLast(r => r.method === 'plugin.shadow.act').params`)
+  const started = await evaluate(`window.__rpc.findLast(r => r.method === 'plugin.shadow-trial.act').params`)
   expect(started.action === 'start' && started.intent === 'compare', 'Compare submits a start with compare intent')
   expect(await evaluate(`document.querySelector('.shd').dataset.mode`) === 'progress', 'Compare starts the trial')
 
