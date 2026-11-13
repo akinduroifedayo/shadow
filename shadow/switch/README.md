@@ -55,6 +55,14 @@ Changing the current model's reasoning settings requires a new proof.
 Older entries without reasoning settings also require a new proof. Keep other
 verified entries in the list.
 
+When the plugin loads, Shadow copies a nonempty list of proofs from
+`plugins.entries.shadow.settings.verified_gradual_pairs` if the new setting is
+missing or an empty list. It reads raw config and saves through `ctx.set_config`
+without expanding credential references. It keeps the legacy entry and preserves
+existing values under `shadow-trial`. Migrated proofs still require the same
+route and reasoning checks. If the copy fails, re-verify the pairs with
+`/shadow doctor --verify-pair`.
+
 The saved entry has this shape. Shadow writes it when the check passes. Do not
 hand-edit `probe_passed` to true.
 
