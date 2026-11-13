@@ -28,6 +28,8 @@ provides_hooks:
   - on_session_start
   - on_session_end
   - pre_command
+  - pre_auxiliary_call
+  - post_auxiliary_call
 provides_middleware:
   - tool_execution
   - llm_execution

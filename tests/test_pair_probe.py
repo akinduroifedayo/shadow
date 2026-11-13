@@ -1,6 +1,7 @@
 import copy
 import json
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -74,6 +75,30 @@ class LiveCompletions:
 def _probe(tmp_path, live, written, **options):
     return PairProbe(ctx=live, write=lambda entry: written.append(entry) or True,
                      evidence_dir=tmp_path, **options)
+
+
+def test_registered_hooks_are_declared_in_manifest(tmp_path, monkeypatch):
+    import yaml
+    from shadow import register
+    from test_hermes_plugin_loader import _install_host
+
+    _install_host(monkeypatch, tmp_path)
+    ctx, live, written = FakeContext(), LiveCompletions(), []
+    ctx.register_hook = live.register_hook
+    ctx.register_auxiliary_task = live.register_auxiliary_task
+    ctx.llm = live
+    register(ctx)
+    assert ctx.shadow_trial is not None and ctx.shadow_switch is not None
+    assert _probe(tmp_path, ctx, written).run(PROVIDER, OLD, NEW)
+
+    root = Path(__file__).resolve().parents[1]
+    manifest = yaml.safe_load((root / 'plugin.yaml').read_text())
+    declared = set(manifest['provides_hooks'])
+    registered = set(live.hooks)
+    assert registered <= declared, registered - declared
+    catalog = yaml.safe_load((root / 'docs' / 'catalog-entry.yaml').read_text())
+    assert catalog['name'] == manifest['name']
+    assert set(catalog['capabilities']['provides_hooks']) == declared
 
 
 def test_public_completions_prove_text_handoff_and_routes(tmp_path):
