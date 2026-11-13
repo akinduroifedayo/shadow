@@ -2,7 +2,7 @@ import { host, ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS } from '@hermes/pl
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 
 const PATH = '/shadow'
-const EVENT = 'plugin.shadow.page.changed'
+const EVENT = 'plugin.shadow-trial.page.changed'
 const ACTIVE_POLL_MS = 4000
 const IDLE_POLL_MS = 30000
 
@@ -11,7 +11,7 @@ const STALE_PROFILE = new Error('Obsolete profile request')
 async function call(method, params = {}, generation = store.generation) {
   if (!store.current(generation)) throw STALE_PROFILE
   try {
-    const result = await host.request(`plugin.shadow.${method}`, params)
+    const result = await host.request(`plugin.shadow-trial.${method}`, params)
     if (!store.current(generation)) throw STALE_PROFILE
     if (result?.error) throw Object.assign(new Error(result.error.message), { code: result.error.code })
     return result

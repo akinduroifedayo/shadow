@@ -16,8 +16,8 @@ class Permission:
 
 
 PERMISSIONS = (
-    Permission("plugins.entries.shadow.llm.allow_provider_override", "llm.provider_override"),
-    Permission("plugins.entries.shadow.llm.allow_model_override", "llm.model_override"),
+    Permission("plugins.entries.shadow-trial.llm.allow_provider_override", "llm.provider_override"),
+    Permission("plugins.entries.shadow-trial.llm.allow_model_override", "llm.model_override"),
 )
 REQUIRED_SETTINGS = tuple(permission.setting for permission in PERMISSIONS)
 
@@ -41,7 +41,7 @@ def permission_granted(config, permission):
         except ImportError:
             pass
         else:
-            return plugin_capability_granted("shadow", permission.capability, config=config)
+            return plugin_capability_granted("shadow-trial", permission.capability, config=config)
     value = config
     for segment in permission.setting.split("."):
         value = value.get(segment) if isinstance(value, dict) else None
@@ -126,7 +126,7 @@ def doctor(config: dict, *, old=None, new=None, catalog=None, profile_name="defa
 def pair_doctor(config: dict, *, old=None, new=None, profile_name="default") -> str:
     command = hermes_command(profile_name)
     lines = []
-    settings = config.get("plugins", {}).get("entries", {}).get("shadow", {}).get("settings", {})
+    settings = config.get("plugins", {}).get("entries", {}).get("shadow-trial", {}).get("settings", {})
     proofs = settings.get("verified_gradual_pairs", [])
     if old is not None and new is not None and old.same_wire(new):
         matched = matching_proof(config, old, new)

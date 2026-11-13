@@ -324,6 +324,20 @@ def verified_pair_from_config(config_reader, old, new, *, sealed_required=False)
     return matching_proof(config_reader(), old, new, sealed_required=sealed_required)
 
 
+def migrate_legacy_pairs(ctx, config):
+    if getattr(config, 'read_error', None):
+        raise OSError('profile config could not be read')
+    entries = config.get('plugins', {}).get('entries', {})
+    entry = entries.get('shadow-trial', {})
+    current = entry.get('settings', {}).get(
+        'verified_gradual_pairs', entry.get('config', {}).get('verified_gradual_pairs', []))
+    if current != []:
+        return
+    pairs = entries.get('shadow', {}).get('settings', {}).get('verified_gradual_pairs')
+    if isinstance(pairs, list) and pairs:
+        ctx.set_config('verified_gradual_pairs', pairs)
+
+
 def register(ctx):
     from gateway.session_context import get_session_env
     from hermes_constants import get_hermes_home
@@ -332,6 +346,10 @@ def register(ctx):
 
     profile_home = Path(get_hermes_home()).resolve()
     config_reader = lambda: read_raw_config_readonly() or {}
+    try:
+        migrate_legacy_pairs(ctx, config_reader())
+    except Exception:
+        logger.warning('Legacy pair proofs were not migrated. Re-verify with /shadow doctor --verify-pair.')
     data_dir = profile_home / "plugin-data" / "shadow"
 
     def open_database():

@@ -37,12 +37,12 @@ never claims to have observed sealed reasoning.
 The check proves reply handoff on the observed routes. It does not prove full
 agent-history or reasoning compatibility. Switching back needs its own check.
 Provider and model overrides require
-`plugins.entries.shadow.llm.allow_provider_override` and
-`plugins.entries.shadow.llm.allow_model_override`. A refused override reports
+`plugins.entries.shadow-trial.llm.allow_provider_override` and
+`plugins.entries.shadow-trial.llm.allow_model_override`. A refused override reports
 `llm_trust_denied`.
 
 On a pass, Shadow saves the pair through `ctx.set_config` under
-`plugins.entries.shadow.settings.verified_gradual_pairs` with `probe_passed: true`
+`plugins.entries.shadow-trial.settings.verified_gradual_pairs` with `probe_passed: true`
 after publishing a short evidence file under the plugin's data folder. The
 evidence has no prompt text, reasoning blobs, or credentials. If the config
 save fails, diagnostic evidence can remain, but it does not authorize a switch.
@@ -55,13 +55,21 @@ Changing the current model's reasoning settings requires a new proof.
 Older entries without reasoning settings also require a new proof. Keep other
 verified entries in the list.
 
+When the plugin loads, Shadow copies a nonempty list of proofs from
+`plugins.entries.shadow.settings.verified_gradual_pairs` if the new setting is
+missing or an empty list. It reads raw config and saves through `ctx.set_config`
+without expanding credential references. It keeps the legacy entry and preserves
+existing values under `shadow-trial`. Migrated proofs still require the same
+route and reasoning checks. If the copy fails, re-verify the pairs with
+`/shadow doctor --verify-pair`.
+
 The saved entry has this shape. Shadow writes it when the check passes. Do not
 hand-edit `probe_passed` to true.
 
 ```yaml
 plugins:
   entries:
-    shadow:
+    shadow-trial:
       settings:
         verified_gradual_pairs:
           - old:

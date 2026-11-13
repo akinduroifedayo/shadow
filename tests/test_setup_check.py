@@ -62,7 +62,7 @@ def test_tampered_record_fails_closed(tmp_path):
 def test_config_and_constructor_cannot_verify(tmp_path):
     made = ControllerLauncher('demo', tmp_path, isolation_verified=True, identity=lambda: IDENTITY)
     assert made.isolation_verified is False
-    assert config_can_verify({'plugins': {'entries': {'shadow': {'settings': {'isolation_verified': True}}}}}) is False
+    assert config_can_verify({'plugins': {'entries': {'shadow-trial': {'settings': {'isolation_verified': True}}}}}) is False
 
 
 _active_dispatch = None

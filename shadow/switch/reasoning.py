@@ -19,7 +19,7 @@ def matching_proof(config, old, new, *, sealed_required=False):
         reasoning, configured_sealed_required = pair_reasoning(config, old.provider, old.model)
     except Exception:
         return False
-    settings = config.get('plugins', {}).get('entries', {}).get('shadow', {}).get('settings', {})
+    settings = config.get('plugins', {}).get('entries', {}).get('shadow-trial', {}).get('settings', {})
     return any(
         isinstance(proof, dict) and old.matches(proof.get('old')) and new.matches(proof.get('new'))
         and proof.get('probe_passed') is True and bool(proof.get('evidence'))

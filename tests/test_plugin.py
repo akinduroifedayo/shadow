@@ -136,15 +136,15 @@ def test_doctor_names_each_missing_permission_without_writes(tmp_path, missing):
     for part in parts[:-1]:
         target = target[part]
     target[parts[-1]] = False
-    config = {'plugins': {'entries': {'shadow': entry}}}
+    config = {'plugins': {'entries': {'shadow-trial': entry}}}
     original = deepcopy(config)
     plugin.config_reader = lambda: config
     text = plugin.command('doctor')
-    setting = 'plugins.entries.shadow.' + missing
+    setting = 'plugins.entries.shadow-trial.' + missing
     assert f'Missing: {setting}' in text
-    fix = 'hermes plugins enable shadow'
+    fix = 'hermes plugins enable shadow-trial'
     assert fix in text
-    assert text.count('Missing: plugins.entries.shadow.') == 1 and config == original
+    assert text.count('Missing: plugins.entries.shadow-trial.') == 1 and config == original
     assert not ctx.capture and not ctx.messages
     assert not (tmp_path / 'trial.sqlite').exists()
 
@@ -152,7 +152,7 @@ def test_doctor_names_each_missing_permission_without_writes(tmp_path, missing):
 def test_doctor_distinguishes_backup_judging_from_a_third_maker(tmp_path):
     ctx, plugin = service(tmp_path)
     plugin.catalog = [CURRENT, TRIAL]
-    plugin.config_reader = lambda: {'plugins': {'entries': {'shadow': {
+    plugin.config_reader = lambda: {'plugins': {'entries': {'shadow-trial': {
         'allow_gateway_injection': True,
         'llm': {'allow_provider_override': True, 'allow_model_override': True}}}}}
     text = plugin.command('doctor')
@@ -171,7 +171,7 @@ def test_start_reads_profile_tier_from_hermes_readonly_config(tmp_path, monkeypa
     ctx, plugin = service(tmp_path)
     config = {section: {'service_tier': 'priority'},
               'model': {'provider': CURRENT.provider, 'default': CURRENT.model},
-              'plugins': {'entries': {'shadow': {'settings': {
+              'plugins': {'entries': {'shadow-trial': {'settings': {
                   'models': [{'provider': m.provider, 'model': m.model} for m in (CURRENT, TRIAL, OUTSIDE)]}}}}}
     original = deepcopy(config)
     loaded = []

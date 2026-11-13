@@ -120,7 +120,7 @@ def test_hermes_loader_alias_registers_shadow_command(tmp_path, monkeypatch):
     assert (plugin_dir / "__init__.py").is_file()
 
     module_name = _manifest_module_name(plugin_dir)
-    assert module_name == "hermes_plugins.shadow"
+    assert module_name == "hermes_plugins.shadow_trial"
     assert plugin_dir.name != "shadow"
 
     saved_path = list(sys.path)

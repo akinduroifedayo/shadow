@@ -34,7 +34,7 @@ def hermes_dispatch(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, 'hermes_cli.observability', observers)
     from hermes_cli.plugins_context import PluginContext
     from hermes_cli.plugins_manifest import PluginManifest
-    context = PluginContext(PluginManifest(name='shadow'), manager)
+    context = PluginContext(PluginManifest(name='shadow-trial'), manager)
     registrations = []
 
     def register(guard):

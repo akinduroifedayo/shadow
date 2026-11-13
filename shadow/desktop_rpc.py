@@ -3,7 +3,7 @@
 The page (``desktop/plugin.js``) is layout only. Every string it shows, numbers included, is rendered
 here from the saved records and the keyed copy table, so the page and the chat card read the same.
 
-Methods (wire name ``plugin.shadow.<name>``, handler ``(params, *, session_id, **kwargs)``):
+Methods (wire name ``plugin.shadow-trial.<name>``, handler ``(params, *, session_id, **kwargs)``):
 
 ``page.state``    ``{test_id?}`` -> PageView. ``test_id`` picks an older test; default is the active
                   test, else the active switch, else the newest verdict or stopped test. Empty picker id selects this default.
@@ -19,7 +19,7 @@ Methods (wire name ``plugin.shadow.<name>``, handler ``(params, *, session_id, *
                   Switch actions submit the panel identity.
                   See desktop/RECORD_VIEWS.md. The page shows ``notice`` as a toast.
 
-Session event (``ctx.emit_to_session``): ``plugin.shadow.page.changed`` with ``{mode, test_id, switch_id}``.
+Session event (``ctx.emit_to_session``): ``plugin.shadow-trial.page.changed`` with ``{mode, test_id, switch_id}``.
 Registered methods return ``{error: {message, code?}}`` for rejected requests, using keyed Shadow copy.
 Emit it through ``page_changed`` on every finished turn and every switch step, trip, undo or watch turn.
 The page refetches ``page.state`` on the event, and polls every few seconds while a test or switch runs

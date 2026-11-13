@@ -23,7 +23,7 @@ def host(monkeypatch):
 
 
 def ready(plugin):
-    config = {'plugins': {'entries': {'shadow': {
+    config = {'plugins': {'entries': {'shadow-trial': {
         'allow_gateway_injection': True,
         'granted_capabilities': ['llm.provider_override', 'llm.model_override'],
     }}}}
@@ -111,7 +111,7 @@ def test_doctor_uses_host_grants_and_exact_enable_fix(tmp_path, host):
     ctx, plugin = service(tmp_path)
     ctx.profile_name = 'work'
     config = ready(plugin)
-    entry = config['plugins']['entries']['shadow']
+    entry = config['plugins']['entries']['shadow-trial']
     entry['granted_capabilities'] = []
     entry['llm'] = {'allow_provider_override': True, 'allow_model_override': True}
     entry['allow_gateway_injection'] = False
@@ -119,9 +119,9 @@ def test_doctor_uses_host_grants_and_exact_enable_fix(tmp_path, host):
     text = ctx.commands['shadow']('doctor')
     assert 'llm.provider_override: not granted' in text
     assert 'llm.model_override: not granted' in text
-    assert 'Fix: hermes -p work plugins enable shadow' in text
+    assert 'Fix: hermes -p work plugins enable shadow-trial' in text
     assert 'allow_gateway_injection' not in text
-    assert 'config set plugins.entries.shadow.llm.' not in text
+    assert 'config set plugins.entries.shadow-trial.llm.' not in text
     assert config == before
 
 
@@ -129,14 +129,14 @@ def test_doctor_falls_back_to_legacy_grants_when_host_api_is_absent(tmp_path, ho
     monkeypatch.setitem(sys.modules, 'hermes_cli.plugin_capabilities', None)
     ctx, plugin = service(tmp_path)
     config = ready(plugin)
-    entry = config['plugins']['entries']['shadow']
+    entry = config['plugins']['entries']['shadow-trial']
     entry.pop('granted_capabilities')
     entry['llm'] = {'allow_provider_override': True, 'allow_model_override': True}
     assert 'not granted' not in ctx.commands['shadow']('doctor')
     entry['llm']['allow_model_override'] = False
     text = ctx.commands['shadow']('doctor')
     assert 'llm.model_override: not granted' in text
-    assert 'Fix: hermes plugins enable shadow' in text
+    assert 'Fix: hermes plugins enable shadow-trial' in text
 
 
 def test_named_profile_keeps_live_verification_fixes_in_the_same_profile(tmp_path, host):

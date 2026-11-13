@@ -49,5 +49,5 @@ def test_doctor_without_an_eligible_saved_test_still_reports_the_registry(plugin
     _, service = plugin
     service.proposal_lookup = lambda test_id: None
     text = service.command("doctor")
-    assert "plugins.entries.shadow.settings.verified_gradual_pairs" in text
+    assert "plugins.entries.shadow-trial.settings.verified_gradual_pairs" in text
     assert "Entry template" not in text

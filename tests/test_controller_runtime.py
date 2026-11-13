@@ -61,7 +61,7 @@ def test_launched_controller_describes_then_calls_deferred_step(tmp_path, monkey
     manager = hermes_dispatch.manager
     manager._discovered = True
     monkeypatch.setattr(hermes_dispatch.plugins, 'get_plugin_manager', lambda: manager)
-    context = PluginContext(PluginManifest(name='shadow'), manager)
+    context = PluginContext(PluginManifest(name='shadow-trial'), manager)
     schema = {'name': 'shadow_trial_step', 'description': 'Advance the Shadow trial.',
               'parameters': {'type': 'object', 'properties': {}, 'additionalProperties': False}}
     context.register_tool('shadow_trial_step', 'shadow_controller', schema, ctx.tools['shadow_trial_step'])

@@ -30,7 +30,7 @@ hermes shadow doctor
 
 Doctor (or `/shadow doctor` in chat) shows the running Hermes version and whether it meets Shadow's minimum, the active profile, the models Hermes exposes with usable credentials, whether a judge from a third maker is available, and whether Shadow's host permissions are granted. For anything missing it prints the exact command to fix it, already scoped to your profile. It does not call providers or print credentials, and nothing needs a manual file edit.
 
-If you declined the capability prompt or installed from a non-interactive shell, run `hermes plugins enable shadow` in an interactive terminal to grant it.
+If you declined the capability prompt or installed from a non-interactive shell, run `hermes plugins enable shadow-trial` in an interactive terminal to grant it.
 
 For a named profile, add `-p <profile>` after `hermes` to each command. To create a new profile first, run `hermes profile create <profile> --no-alias --no-skills`.
 
@@ -225,7 +225,7 @@ Run `hermes shadow doctor` first. It prints what's ready and the exact command t
 | --- | --- |
 | No other model is available. | Run `hermes model` in this profile. Configure and sign in to another model, then run doctor again. |
 | No third-maker judge is available. | Add a model from another maker through Hermes, or review the disclosed backup judging method on the start card. An explicit `--judge` must be from an outside maker. |
-| A capability is not granted. | Run `hermes plugins capabilities shadow` to inspect grants. Run `hermes plugins enable shadow` interactively to review consent, then follow doctor's remaining fixes. |
+| A capability is not granted. | Run `hermes plugins capabilities shadow-trial` to inspect grants. Run `hermes plugins enable shadow-trial` interactively to review consent, then follow doctor's remaining fixes. |
 | The setup check gets no result from a running gateway. | Run `hermes gateway restart`, or `hermes -p <profile> gateway restart` for a named profile, then repeat the check. Shadow does not reload the gateway. |
 | Start is locked. | Follow doctor. Run `hermes shadow doctor --verify` for the live isolation check. Keep at least 20 eligible completed turns in the chosen days. |
 | Price is unknown. | Pick a model with a known price. OpenRouter request fees use Hermes's public pricing reader. A stale cache may refresh once at preparation with a bounded timeout. |
