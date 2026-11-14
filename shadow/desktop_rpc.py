@@ -1139,14 +1139,14 @@ def build_start(c: Copy, source: Source, model: str, judge: str | None = None, *
     if not facts.get('isolation_verified', False):
         blocked = c('trial.isolation_required')
     elif facts['picked'] < 20:
-        blocked = c('start.too_few', picked=facts['picked'], days=facts['days'], command='/shadow', model=model, verb='try')
+        blocked = c('start.too_few', picked=facts['picked'], days=facts['days'], command='/shadow-trial', model=model, verb='try')
     elif unpriced:
         missing = _unpriced_names(trying, current, *judging['models'], facts=facts) or trying.get('name') or model
         blocked = _pricing_notice(c, facts) if facts.get('pricing_blocker') == 'service_tier' else c('start.no_price', model=missing)
     elif estimate > facts['cap']:
         blocked = c('start.over_cap', estimate=estimate, cap=facts['cap'],
                     minimum=facts.get('minimum', estimate * 20 / facts['picked']),
-                    command='/shadow', model=model, higher=math.ceil(estimate), verb='try')
+                    command='/shadow-trial', model=model, higher=math.ceil(estimate), verb='try')
     buttons = ([] if blocked else [_button(c, 'start', 'button.start', primary=True),
                                    _button(c, 'compare', 'desktop.start.compare')]) + [
         _button(c, 'see', 'desktop.start.see', picked=facts['picked']), _button(c, 'cancel', 'button.cancel')]

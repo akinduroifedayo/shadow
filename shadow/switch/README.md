@@ -1,6 +1,6 @@
 # Enable gradual switching after a runtime check
 
-Run `/shadow doctor` in chat or `hermes shadow doctor` in the terminal.
+Run `/shadow-trial doctor` in chat or `hermes shadow-trial doctor` in the terminal.
 Doctor checks permissions and model availability without changing your profile.
 When a completed saved test exists, doctor also checks its exact route pair.
 
@@ -9,10 +9,10 @@ tests do not authorize a pair. Choose two models configured in your Hermes profi
 with usable credentials and run:
 
 ```
-hermes shadow doctor --verify-pair <old-model> <new-model> --provider <provider>
+hermes shadow-trial doctor --verify-pair <old-model> <new-model> --provider <provider>
 ```
 
-Use the same arguments after `/shadow doctor` in chat. If you omit the pair,
+Use the same arguments after `/shadow-trial doctor` in chat. If you omit the pair,
 Shadow uses the exact pair from the newest completed saved test. Without that test,
 Shadow asks for both model names. Hermes model discovery validates both models
 and credentials before confirmation or either call.
@@ -61,7 +61,7 @@ missing or an empty list. It reads raw config and saves through `ctx.set_config`
 without expanding credential references. It keeps the legacy entry and preserves
 existing values under `shadow-trial`. Migrated proofs still require the same
 route and reasoning checks. If the copy fails, re-verify the pairs with
-`/shadow doctor --verify-pair`.
+`/shadow-trial doctor --verify-pair`.
 
 The saved entry has this shape. Shadow writes it when the check passes. Do not
 hand-edit `probe_passed` to true.
@@ -96,7 +96,7 @@ the two model names, the reply handoff, and that sealed reasoning was not
 observable. It does not record credentials, prompts, or conversation text. Only
 the saved config entry authorizes the pair.
 
-Run doctor again, then `/shadow switch <test-id>`. A missing or mismatched
+Run doctor again, then `/shadow-trial switch <test-id>`. A missing or mismatched
 entry leaves gradual switching blocked. Cross-provider switching uses its
 separate 20-turn watch and does not need this gradual-pair entry.
 

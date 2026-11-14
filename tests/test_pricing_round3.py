@@ -162,7 +162,7 @@ def test_profile_non_normal_service_tier_blocks_start(tmp_path, section, tier):
                                      'delegation': {'inherit_mcp_toolsets': False, **(
                                          {'service_tier': tier} if section == 'delegation' else {})}}
     ctx.answers = ['cancel']
-    ctx.commands['shadow']('try gpt-6-luna --turns 20', session_id='origin')
+    ctx.commands['shadow-trial']('try gpt-6-luna --turns 20', session_id='origin')
     record = plugin.store.get()
     assert not record['can_start']
     assert record['estimate']['total'] is None
@@ -176,7 +176,7 @@ def test_profile_normal_service_tier_remains_priced(tmp_path, tier):
     plugin.config_reader = lambda: {'agent': {'service_tier': tier},
                                      'delegation': {'service_tier': tier, 'inherit_mcp_toolsets': False}}
     ctx.answers = ['cancel']
-    ctx.commands['shadow']('try gpt-6-luna --turns 20', session_id='origin')
+    ctx.commands['shadow-trial']('try gpt-6-luna --turns 20', session_id='origin')
     record = plugin.store.get()
     assert record['can_start']
     assert record['estimate']['total'] > 0

@@ -83,7 +83,7 @@
   "trial.not_found": "No tests yet",
   "trial.stopped": "Test {id} stopped. Spent ${spend:.2f} of ${cap:.2f}. The {done} finished turns are kept. That's too few for an answer.",
   "trial.stopped_usable": "Test {id} stopped with {done} finished turns. Spent ${spend:.2f} of ${cap:.2f}.",
-  "trial.controller_exited": "The test controller ended before the test finished. Start a new test with /shadow try {model} or hermes shadow try {model}.",
+  "trial.controller_exited": "The test controller ended before the test finished. Start a new test with /shadow-trial try {model} or hermes shadow-trial try {model}.",
   "controller.tool_denied": "This controller can only discover tools and run Shadow test steps.",
   "trial.status": "Shadow: test {id}, {done} of {picked} turns, ${spend:.2f} of ${cap:.2f} spent.",
   "trial.progress": "Shadow test {id}: {done} of {picked} turns done · ${spend:.2f} of ${cap:.2f} spent",

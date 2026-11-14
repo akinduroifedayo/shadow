@@ -11,13 +11,13 @@ Shadow is a Hermes plugin. It replays recent saved turns on the model you want t
 Use Hermes 0.23.1 or later. Run this in an interactive terminal:
 
 ```bash
-hermes plugins install akinduroifedayo/shadow --enable
+hermes plugins install 'akinduroifedayo/shadow' --enable
 ```
 
 For a named profile, use this command instead. Replace `<profile>` with its name:
 
 ```bash
-hermes -p <profile> plugins install akinduroifedayo/shadow --enable
+hermes -p <profile> plugins install 'akinduroifedayo/shadow' --enable
 ```
 
 Review and accept Hermes's capability consent prompt. Shadow uses your profile's provider access. Configure models and sign in through `hermes model`.
@@ -25,10 +25,10 @@ Review and accept Hermes's capability consent prompt. Shadow uses your profile's
 Then check setup:
 
 ```bash
-hermes shadow doctor
+hermes shadow-trial doctor
 ```
 
-Doctor (or `/shadow doctor` in chat) shows the running Hermes version and whether it meets Shadow's minimum, the active profile, the models Hermes exposes with usable credentials, whether a judge from a third maker is available, and whether Shadow's host permissions are granted. For anything missing it prints the exact command to fix it, already scoped to your profile. It does not call providers or print credentials, and nothing needs a manual file edit.
+Doctor (or `/shadow-trial doctor` in chat) shows the running Hermes version and whether it meets Shadow's minimum, the active profile, the models Hermes exposes with usable credentials, whether a judge from a third maker is available, and whether Shadow's host permissions are granted. For anything missing it prints the exact command to fix it, already scoped to your profile. It does not call providers or print credentials, and nothing needs a manual file edit.
 
 If you declined the capability prompt or installed from a non-interactive shell, run `hermes plugins enable shadow-trial` in an interactive terminal to grant it.
 
@@ -37,7 +37,7 @@ For a named profile, add `-p <profile>` after `hermes` to each command. To creat
 Before the first test, run the live isolation check and confirm its model call:
 
 ```bash
-hermes shadow doctor --verify
+hermes shadow-trial doctor --verify
 ```
 
 Start stays locked until the check verifies replay context, memory, working-folder isolation, and tool blocking. Run the check again after anything it was bound to changes: Shadow's installed files, the Hermes version or commit, the profile, memory or delegation settings, or other plugins' versions. If the Shadow page or command is missing after installation, restart Hermes and Hermes Desktop.
@@ -47,19 +47,19 @@ Start stays locked until the check verifies replay context, memory, working-fold
 In the terminal, choose a model from your Hermes profile:
 
 ```bash
-hermes shadow try <model>
-hermes shadow compare <model>
+hermes shadow-trial try <model>
+hermes shadow-trial compare <model>
 ```
 
 To choose the judge and set the sample and spending cap:
 
 ```bash
-hermes shadow try <model> --judge <judge-model> --turns 30 --days 7 --budget 5
+hermes shadow-trial try <model> --judge <judge-model> --turns 30 --days 7 --budget 5
 ```
 
 `try` starts a switch candidate. `compare` starts a neutral comparison with the same sample, judge, and cap options.
 
-Shadow discovers models through Hermes and checks provider access. Running `hermes shadow try` without a model opens the picker.
+Shadow discovers models through Hermes and checks provider access. Running `hermes shadow-trial try` without a model opens the picker.
 
 The start card lists the picked turns, exclusion reasons, judge, receiving providers, scrub counts, and estimated cost. Review it before confirming Start. Defaults are 30 turns, seven days, and a $5 cap. A test needs at least 20 eligible turns. `--turns` accepts 20 to 60, and `--days` accepts 1 to 365.
 
@@ -67,25 +67,25 @@ Use these terminal commands:
 
 | Command | What it does |
 | --- | --- |
-| `hermes shadow compare <model>` | Compare models without recommending a switch. |
-| `hermes shadow doctor` | Check setup and show fixes. |
-| `hermes shadow status` | Show the current test or switch. |
-| `hermes shadow results` | Show the newest saved test record. |
-| `hermes shadow results <id>` | Show a specific saved test. |
-| `hermes shadow results <id> --stats` | Show the numbers behind the verdict. |
-| `hermes shadow cancel` | Stop a test and keep completed turns. |
-| `hermes shadow switch <id>` | Start a switch from a saved test. Add `--anyway` to confirm a warned switch. |
-| `hermes shadow undo` | Restore the previous model. |
-| `hermes shadow forget <id>` | Delete a saved test. Use `all` for every saved test. |
+| `hermes shadow-trial compare <model>` | Compare models without recommending a switch. |
+| `hermes shadow-trial doctor` | Check setup and show fixes. |
+| `hermes shadow-trial status` | Show the current test or switch. |
+| `hermes shadow-trial results` | Show the newest saved test record. |
+| `hermes shadow-trial results <id>` | Show a specific saved test. |
+| `hermes shadow-trial results <id> --stats` | Show the numbers behind the verdict. |
+| `hermes shadow-trial cancel` | Stop a test and keep completed turns. |
+| `hermes shadow-trial switch <id>` | Start a switch from a saved test. Add `--anyway` to confirm a warned switch. |
+| `hermes shadow-trial undo` | Restore the previous model. |
+| `hermes shadow-trial forget <id>` | Delete a saved test. Use `all` for every saved test. |
 
-In chat, replace `hermes shadow` with `/shadow`:
+In chat, replace `hermes shadow-trial` with `/shadow-trial`:
 
 ```text
-/shadow try <model> --judge <judge-model>
-/shadow compare <model> --judge <judge-model>
-/shadow status
-/shadow results <id> --stats
-/shadow cancel
+/shadow-trial try <model> --judge <judge-model>
+/shadow-trial compare <model> --judge <judge-model>
+/shadow-trial status
+/shadow-trial results <id> --stats
+/shadow-trial cancel
 ```
 
 In Hermes Desktop, open **Shadow** in the sidebar and select **Try a model**. Review the start card and select **Start**. Chat, Desktop, and the terminal use the same profile's saved records. Desktop lets you pick an answer with model names hidden before revealing the names and judge's choice.
@@ -124,7 +124,7 @@ Below the headline:
 - **Two-model table.** One row per model with win rate, cost per turn, and speed per turn. A column appears only when both models have that measurement recorded.
 - **Advice tag.** A short label based on why you started the test, its quality outcome, and its cost band. Switch candidates can show **Safe to switch**, **Switch saves money**, or **Stay on your current model**. Comparisons name the model that came out ahead or matched for less, or show **Even match**. Settled quality results keep a factual tag when cost is unknown. See the [full tag table](docs/verdict-tags.md).
 
-The receipt underneath shows result counts, cost per turn, speed, tool steps, and broken calls. **Show the numbers** in Desktop and `hermes shadow results <id> --stats` in the terminal list the net win rate, interval, sign test, holds-up check, judge self-agreement, and where the new model won or lost.
+The receipt underneath shows result counts, cost per turn, speed, tool steps, and broken calls. **Show the numbers** in Desktop and `hermes shadow-trial results <id> --stats` in the terminal list the net win rate, interval, sign test, holds-up check, judge self-agreement, and where the new model won or lost.
 
 This sample render, from the plugin's Desktop page with test fixtures, shows the numbers-first headline, the win-rate bar, the two-model table, and the Stay on your current model tag. It is not from a real test.
 
@@ -169,7 +169,7 @@ Shadow makes no network calls of its own. All model calls go through Hermes with
 
 Web lookups are on by default. Shadow asks Hermes's web tools to run searches and page fetches for real. Within a turn, identical lookup arguments reuse the saved result across both models. Those lookups send queries or URLs through Hermes's configured web service. Turn the **Web lookups** toggle off on the Shadow page to stop replays at a lookup instead. Model calls still go to the providers shown on the start card.
 
-Saved tests older than 30 days are removed when Shadow prunes records during use. `hermes shadow forget <id>` deletes a test sooner. It refuses deletion of a running test. Stopping a test preserves its completed turns.
+Saved tests older than 30 days are removed when Shadow prunes records during use. `hermes shadow-trial forget <id>` deletes a test sooner. It refuses deletion of a running test. Stopping a test preserves its completed turns.
 
 ## Cost and spending caps
 
@@ -184,7 +184,7 @@ Every called model needs a known token price. An unknown price or unsupported se
 Switch from a saved test:
 
 ```bash
-hermes shadow switch <id>
+hermes shadow-trial switch <id>
 ```
 
 A test where the new model won or tied backs the switch. You can also name a model instead of a test ID.
@@ -196,12 +196,12 @@ If the test doesn't back the switch, Shadow warns you once and asks before it ch
 ```text
 Won 3, lost 18, tied 9 of 30 turns · 61% cheaper per turn
 Switch anyway?
-To confirm, run: hermes shadow switch <id> --anyway
+To confirm, run: hermes shadow-trial switch <id> --anyway
 ```
 
 In the terminal or chat, run the printed command with `--anyway` to confirm. In Desktop, select **Switch anyway** and confirm in the dialog. Nothing changes unless you confirm.
 
-The override skips only the verdict check. Every other switch check still applies. That includes route compatibility between the two models and, for a gradual switch, the exact-pair compatibility check below. Shadow logs each override in the switch history with the reason, the time, and the headline you saw. `hermes shadow status` shows it as an owner override.
+The override skips only the verdict check. Every other switch check still applies. That includes route compatibility between the two models and, for a gradual switch, the exact-pair compatibility check below. Shadow logs each override in the switch history with the reason, the time, and the headline you saw. `hermes shadow-trial status` shows it as an owner override.
 
 ### How a switch runs
 
@@ -215,11 +215,11 @@ Shadow pauses and restores the old model after three new-model turns fail with r
 
 A different-provider switch changes the default at once and watches 20 new-model turns. The same request-failure trigger or five turns with trouble restore the old default. Follow the provider-qualified `/model` command Shadow prints to move the current chat too.
 
-`hermes shadow undo` restores the previous model, including after a completed switch, unless a test is running. `hermes shadow switch` resumes a paused switch. Changing models yourself with `/model` releases that conversation from Shadow's routing. During an active switch, that manual choice ends the switch, and undo is no longer available for it; use `hermes model` to set the default you want.
+`hermes shadow-trial undo` restores the previous model, including after a completed switch, unless a test is running. `hermes shadow-trial switch` resumes a paused switch. Changing models yourself with `/model` releases that conversation from Shadow's routing. During an active switch, that manual choice ends the switch, and undo is no longer available for it; use `hermes model` to set the default you want.
 
 ## Troubleshooting
 
-Run `hermes shadow doctor` first. It prints what's ready and the exact command to fix anything missing.
+Run `hermes shadow-trial doctor` first. It prints what's ready and the exact command to fix anything missing.
 
 | Problem | Fix |
 | --- | --- |
@@ -227,10 +227,10 @@ Run `hermes shadow doctor` first. It prints what's ready and the exact command t
 | No third-maker judge is available. | Add a model from another maker through Hermes, or review the disclosed backup judging method on the start card. An explicit `--judge` must be from an outside maker. |
 | A capability is not granted. | Run `hermes plugins capabilities shadow-trial` to inspect grants. Run `hermes plugins enable shadow-trial` interactively to review consent, then follow doctor's remaining fixes. |
 | The setup check gets no result from a running gateway. | Run `hermes gateway restart`, or `hermes -p <profile> gateway restart` for a named profile, then repeat the check. Shadow does not reload the gateway. |
-| Start is locked. | Follow doctor. Run `hermes shadow doctor --verify` for the live isolation check. Keep at least 20 eligible completed turns in the chosen days. |
+| Start is locked. | Follow doctor. Run `hermes shadow-trial doctor --verify` for the live isolation check. Keep at least 20 eligible completed turns in the chosen days. |
 | Price is unknown. | Pick a model with a known price. OpenRouter request fees use Hermes's public pricing reader. A stale cache may refresh once at preparation with a bounded timeout. |
 | The service tier cannot be priced. | Use the provider's standard tier in Hermes, then prepare the test again. |
-| A test stopped. | Run `hermes shadow status` and `hermes shadow results <id>`. Read the stop reason. Raise the cap for a fresh test if needed, or resolve provider access and rate limits. |
+| A test stopped. | Run `hermes shadow-trial status` and `hermes shadow-trial results <id>`. Read the stop reason. Raise the cap for a fresh test if needed, or resolve provider access and rate limits. |
 | The judge couldn't be reached. | If the first two judge requests fail with no answer, Shadow stops the test and nothing is switched. Check that the judge model still works in Hermes, or pick another with `--judge`, then start a new test. |
 | Hermes reloaded during a test. | Check status. The controller can recover saved progress within its retry limit. Review completed turns before starting another test. |
 | A gradual switch is blocked. | Run doctor and the exact pair check it prints. A changed endpoint, request format, or reasoning setting needs a matching check. |

@@ -1,6 +1,6 @@
 # Trial-aware verdict tags
 
-Trial records store `intent`, either `switch` or `compare`. The shared record parser assigns `switch` when an older saved record has no intent. `/shadow try` and the Desktop start card's Start button create switch candidates. `/shadow compare`, `hermes shadow compare`, and the Desktop start card's secondary Compare button start comparisons. Both Desktop buttons submit the same consent card through the start RPC. A second look retains the original intent.
+Trial records store `intent`, either `switch` or `compare`. The shared record parser assigns `switch` when an older saved record has no intent. `/shadow-trial try` and the Desktop start card's Start button create switch candidates. `/shadow-trial compare`, `hermes shadow-trial compare`, and the Desktop start card's secondary Compare button start comparisons. Both Desktop buttons submit the same consent card through the start RPC. A second look retains the original intent.
 
 The tag registry in `shadow/trial/presentation.py` maps intent, the saved verdict outcome, and cost comparison to keyed copy. It leaves judging and stored confidence intervals unchanged. The saved `too_close` outcome gets the extra-turn hint only before a second look and when the judge panel remains eligible. A `holds_up` result remains a quality tie under the existing judging rule, even when its confidence interval includes even.
 

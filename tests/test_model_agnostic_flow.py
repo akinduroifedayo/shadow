@@ -32,13 +32,13 @@ def profile_plugin(tmp_path, hermes_profile):
 def test_trial_refuses_missing_credentials_before_selection_or_calls(profile_plugin, command):
     ctx, plugin = profile_plugin
     plugin.selector = lambda **kw: pytest.fail('credentials must be checked before selection')
-    assert 'credentials_unknown' in ctx.commands['shadow'](command)
+    assert 'credentials_unknown' in ctx.commands['shadow-trial'](command)
     assert not plugin.store.list() and not ctx.capture and not plugin.launcher.launched
 
 
 def test_picker_and_desktop_use_only_authenticated_profile_models(profile_plugin):
     ctx, plugin = profile_plugin
-    ctx.commands['shadow']('try')
+    ctx.commands['shadow-trial']('try')
     choices = ctx.questions[0][1]
     assert [choice['value'] for choice in choices] == ['openrouter::future/ember']
     rows = ProfileSource(plugin).models()
@@ -61,7 +61,7 @@ def test_unknown_maker_try_pair_proof_and_gradual_switch_end_to_end(
     monkeypatch.setattr(usage, 'price_for', lambda model: rate)
     ctx.subagent_lifecycle.base_url, ctx.subagent_lifecycle.api_mode = BASE, MODE
     plugin.launcher.launch = lambda record: finish_controller(ctx, plugin, record)
-    setup, handler = ctx.cli['shadow']
+    setup, handler = ctx.cli['shadow-trial']
     parser = argparse.ArgumentParser()
     setup(parser)
     handler(parser.parse_args(['try', trial.model, '--turns', '20', '--yes']))

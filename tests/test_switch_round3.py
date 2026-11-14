@@ -107,7 +107,7 @@ def test_repeated_undo_replies_with_status_without_repeating_writes(plugin, firs
     service.engine.start(Proposal('saved', OLD, CROSS, 'better'))
     assert service.action(first_action)
     if surface == 'command':
-        reply = ctx.commands['shadow']('undo')
+        reply = ctx.commands['shadow-trial']('undo')
     else:
         reply = service.action('undo')
     assert reply == status(service.engine.record)

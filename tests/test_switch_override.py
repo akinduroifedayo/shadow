@@ -14,7 +14,7 @@ def test_warning_is_read_only_then_confirmation_switches_and_logs(plugin, word, 
     before = service.engine.store.read()
     warning = service.command('switch saved', terminal=True)
     assert 'Switch anyway?' in warning
-    assert 'hermes shadow switch saved --anyway' in warning
+    assert 'hermes shadow-trial switch saved --anyway' in warning
     assert service.engine.store.read() == before
     result = service.command('switch saved --anyway', terminal=True)
     record = service.engine.record
@@ -152,7 +152,7 @@ def test_model_name_uses_saved_losing_numbers_instead_of_claiming_untested(tmp_p
     switch = SwitchPlugin(ctx, engine, config_reader=lambda: {}, proposal_lookup=trial.proposal)
     warning = switch.command(f'switch {TRIAL.model}', terminal=terminal)
     assert 'Won 1, lost 8, tied 21 of 30 turns' in warning
-    prefix = 'hermes shadow' if terminal else '/shadow'
+    prefix = 'hermes shadow-trial' if terminal else '/shadow-trial'
     assert f'{prefix} switch {saved["id"]} --anyway' in warning
     newer = card_record(tmp_path, (3, 9, 18))
     newer['created_at'] = saved['created_at'] + 1

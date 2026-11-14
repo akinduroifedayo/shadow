@@ -18,13 +18,13 @@ def test_registered_doctor_checks_the_saved_exact_pair(plugin, capsys, terminal)
 
     service.proposal_lookup = lookup
     if terminal:
-        setup, handler = ctx.cli["shadow"]
+        setup, handler = ctx.cli["shadow-trial"]
         parser = argparse.ArgumentParser()
         setup(parser)
         handler(parser.parse_args(["doctor"]))
         text = capsys.readouterr().out
     else:
-        text = ctx.commands["shadow"]("doctor")
+        text = ctx.commands["shadow-trial"]("doctor")
     assert '"old": ' in text and '"new": ' in text
     assert '"probe_passed": false' in text
     assert looked_up == [None]
@@ -39,7 +39,7 @@ def test_invalid_trial_route_metadata_is_refused_without_a_traceback(plugin, com
         return Proposal("saved", Route(**{**vars(OLD), "extra": "metadata"}), NEW, "better")
 
     service.proposal_lookup = lookup
-    text = ctx.commands["shadow"](command)
+    text = ctx.commands["shadow-trial"](command)
     assert text == "This switch action isn't available in the current state."
     assert service.engine.record is None
     assert ctx.messages == []

@@ -342,7 +342,7 @@ def test_trial_command_delegates_the_pair_check(tmp_path):
     register(ctx, plugin=plugin)
     seen = []
     ctx.shadow_verify_pair = lambda *, terminal, yes: seen.append((terminal, yes)) or 'pair result'
-    assert ctx.commands['shadow']('doctor --verify-pair --yes') == 'pair result'
+    assert ctx.commands['shadow-trial']('doctor --verify-pair --yes') == 'pair result'
     assert seen == [(False, True)]
 
 

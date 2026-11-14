@@ -39,13 +39,13 @@ def test_step_one_omits_unsupported_pace_and_preserves_turn_threshold(threshold)
 def test_step_one_omits_unsupported_pace_on_every_surface(plugin, capsys, surface):
     ctx, service = plugin
     if surface == "cli":
-        setup, handler = ctx.cli["shadow"]
+        setup, handler = ctx.cli["shadow-trial"]
         parser = argparse.ArgumentParser()
         setup(parser)
         handler(parser.parse_args(["switch", "saved"]))
         text = capsys.readouterr().out
     elif surface == "chat":
-        text = ctx.commands["shadow"]("switch saved")
+        text = ctx.commands["shadow-trial"]("switch saved")
     else:
         service.engine.start(Proposal("saved", OLD, NEW, "better"))
         text = service.panel()["notices"][0]["text"]

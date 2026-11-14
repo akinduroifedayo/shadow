@@ -11,6 +11,7 @@ from time import monotonic
 logger = logging.getLogger(__name__)
 
 from ..common.discovery import ModelUnavailable, discover_models
+from ..common.commands import COMMAND_NAME
 from .copy import copy, fields, render_notice, status
 from .defaults import DefaultWriter
 from .decision import SwitchBlocked
@@ -194,7 +195,7 @@ class SwitchPlugin:
                     self.engine.validate_routes(proposal)
                     from .decision import switch_warning
                     if proposal.override_reason and not anyway:
-                        command = 'hermes shadow' if terminal else '/shadow'
+                        command = 'hermes shadow-trial' if terminal else '/shadow-trial'
                         target = proposal.test_id or target
                         return switch_warning(proposal) + '\n' + copy('switch.override.confirm_command', command=command, target=shlex.quote(target))
                     self.engine.start(proposal, confirm_override=anyway)
@@ -349,7 +350,7 @@ def register(ctx):
     try:
         migrate_legacy_pairs(ctx, config_reader())
     except Exception:
-        logger.warning('Legacy pair proofs were not migrated. Re-verify with /shadow doctor --verify-pair.')
+        logger.warning('Legacy pair proofs were not migrated. Re-verify with /shadow-trial doctor --verify-pair.')
     data_dir = profile_home / "plugin-data" / "shadow"
 
     def open_database():
@@ -458,7 +459,7 @@ def register(ctx):
         def cli_handler(args):
             print(dispatch(shlex.join(args.shadow_args), terminal=True))
 
-        ctx.register_command("shadow", dispatch, description=copy("switch.cli.help"), args_hint="<command>")
-        ctx.register_cli_command("shadow", copy("switch.cli.help"), cli_setup, cli_handler)
+        ctx.register_command(COMMAND_NAME, dispatch, description=copy("switch.cli.help"), args_hint="<command>")
+        ctx.register_cli_command(COMMAND_NAME, copy("switch.cli.help"), cli_setup, cli_handler)
         ctx.shadow_router_registered = True
     return service

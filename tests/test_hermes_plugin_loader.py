@@ -109,7 +109,7 @@ def _install_host(monkeypatch, home: Path) -> None:
         monkeypatch.setitem(sys.modules, name, module)
 
 
-def test_hermes_loader_alias_registers_shadow_command(tmp_path, monkeypatch):
+def test_hermes_loader_alias_registers_shadow_trial_command(tmp_path, monkeypatch):
     repo = Path(__file__).resolve().parents[1]
     plugin_dir = tmp_path / "hermes_plugins_xyz" / "shadow_alias"
     plugin_dir.mkdir(parents=True)
@@ -139,8 +139,9 @@ def test_hermes_loader_alias_registers_shadow_command(tmp_path, monkeypatch):
         assert "shadow" not in sys.modules
         ctx = _Context()
         module.register(ctx)
-        assert callable(ctx.commands["shadow"])
-        assert "shadow" in ctx.cli
+        assert callable(ctx.commands["shadow-trial"])
+        assert set(ctx.commands) == {"shadow-trial"}
+        assert set(ctx.cli) == {"shadow-trial"}
         desktop = importlib.import_module(f"{module_name}.shadow.desktop_rpc")
         switch_copy = importlib.import_module(f"{module_name}.shadow.switch.copy")
         assert desktop.display_name("gpt-6.1-sol").startswith("GPT-")

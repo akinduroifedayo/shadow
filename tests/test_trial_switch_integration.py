@@ -26,7 +26,7 @@ def test_active_switch_refuses_trial_before_selection(tmp_path, switch_api, phas
     ctx, plugin = service(tmp_path)
     ctx.shadow_switch = SimpleNamespace(engine=SimpleNamespace(record=SimpleNamespace(phase=phase)))
     plugin.selector = lambda **_: pytest.fail('an active switch must refuse turn selection')
-    text = ctx.commands['shadow'](f'try {TRIAL.model}')
+    text = ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     assert text == 'A switch is in progress. Finish it or undo it first.'
     assert not plugin.store.list() and not ctx.capture
 
@@ -35,7 +35,7 @@ def test_trial_uses_exported_switch_activity_contract(tmp_path, switch_api):
     ctx, plugin = service(tmp_path)
     switch_api.is_active = lambda record: True
     ctx.shadow_switch = SimpleNamespace(engine=SimpleNamespace(record=None))
-    assert ctx.commands['shadow'](f'try {TRIAL.model}') == 'A switch is in progress. Finish it or undo it first.'
+    assert ctx.commands['shadow-trial'](f'try {TRIAL.model}') == 'A switch is in progress. Finish it or undo it first.'
 
 
 @pytest.mark.parametrize('message', ['shadow-controller:unknown:token', 'shadow-controller:malformed'])
@@ -80,7 +80,7 @@ def test_registering_trial_after_switch_preserves_composed_routes(tmp_path, verb
         return 'composed ' + verb
     ctx.shadow_command_routes[verb] = composed
     register(ctx, plugin=plugin)
-    assert ctx.commands['shadow'](verb, session_id='origin') == 'composed ' + verb
+    assert ctx.commands['shadow-trial'](verb, session_id='origin') == 'composed ' + verb
     assert calls == [(verb, {'session_id': 'origin'})]
 
 
@@ -99,9 +99,9 @@ def test_package_registration_preserves_switch_composition(tmp_path, switch_api,
     switch_api.register = register_switch
     shadow.register(ctx)
     composed = ctx.shadow_command_routes['status']
-    assert ctx.commands['shadow']('status') == 'composed status'
+    assert ctx.commands['shadow-trial']('status') == 'composed status'
     assert composed is switch_api.composed_status
-    doctor = ctx.commands['shadow']('doctor')
+    doctor = ctx.commands['shadow-trial']('doctor')
     assert 'isolation' in doctor.lower() and 'switch diagnostics' in doctor
     assert doctor.count('isolation') == 1
 
@@ -164,7 +164,7 @@ def test_malformed_observed_routes_do_not_escape_proposal_lookup(tmp_path, switc
 def test_doctor_names_missing_comparison_and_judge_without_switch(tmp_path):
     ctx, plugin = service(tmp_path)
     plugin.catalog = [CURRENT]
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert 'at least one other model to try' in text
     assert 'hermes model' in text
     assert 'a model that can act as judge' in text

@@ -174,19 +174,19 @@ def test_verify_command_names_the_model_and_does_not_call_until_yes(tmp_path, mo
     plugin.setup_launch = lambda *args, **kwargs: called.append(args) or {'passed': False}
     monkeypatch.setenv('HERMES_HOME', str(tmp_path / 'home'))
     (tmp_path / 'home').mkdir()
-    declined = ctx.commands['shadow']('doctor --verify')
+    declined = ctx.commands['shadow-trial']('doctor --verify')
     assert 'openai-codex / gpt-6.1-sol' in declined
     assert 'Nothing was called.' in declined
     assert called == []
     plugin.setup_launch = lambda launcher, job: write_record(launcher.directory, launcher.identity, checks()) or {'passed': True}
-    accepted = ctx.commands['shadow']('doctor --verify --yes')
+    accepted = ctx.commands['shadow-trial']('doctor --verify --yes')
     assert 'The setup check passed' in accepted
     assert plugin.launcher.isolation_verified is True
 
 
 def test_one_check_at_a_time(tmp_path):
     ctx, plugin = _plugin(tmp_path)
-    assert ctx.commands['shadow']('doctor --verify --verify-pair') == 'Run one check at a time.'
+    assert ctx.commands['shadow-trial']('doctor --verify --verify-pair') == 'Run one check at a time.'
 
 
 def test_probe_requires_bounded_completion_and_one_valid_answer(tmp_path):
@@ -294,7 +294,7 @@ def test_verify_uses_hermes_context_home_over_process_environment(tmp_path, monk
     seen = []
     plugin.setup_launch = lambda launcher, job: seen.append(job) or {'passed': False}
     monkeypatch.setenv('HERMES_HOME', str(tmp_path / 'different-profile'))
-    ctx.commands['shadow']('doctor --verify --yes')
+    ctx.commands['shadow-trial']('doctor --verify --yes')
     assert seen[0]['home'] == str(tmp_path / 'home')
 
 
@@ -516,7 +516,7 @@ def test_empty_memory_verification_expires_when_saved_memory_appears(tmp_path):
     assert plugin.launcher.isolation_verified is True
     note.write_text('User is Ife.')
     assert plugin.launcher.isolation_verified is False
-    shown = ctx.commands['shadow']('doctor')
+    shown = ctx.commands['shadow-trial']('doctor')
     assert 'isolation are not verified' in shown
     assert 'This profile has no saved memory.' not in shown
 
@@ -526,7 +526,7 @@ def test_doctor_qualifies_only_an_empty_memory_verification(tmp_path, no_saved_m
     ctx, plugin = _plugin(tmp_path)
     (tmp_path / 'home').mkdir()
     write_record(tmp_path, IDENTITY, checks(), no_saved_memory=no_saved_memory)
-    shown = ctx.commands['shadow']('doctor')
+    shown = ctx.commands['shadow-trial']('doctor')
     assert 'Replay context and memory isolation was checked on' in shown
     assert ('This profile has no saved memory.' in shown) is no_saved_memory
     assert ('The replay received no memory guidance or memory blocks.' in shown) is no_saved_memory

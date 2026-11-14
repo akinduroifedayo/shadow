@@ -40,9 +40,9 @@ def test_doctor_reports_host_profile_usable_models_and_grants(tmp_path, host, su
     plugin.catalog = [CURRENT, TRIAL, OUTSIDE, Model('offline', 'deepseek-chat', reachable=False)]
     before = deepcopy(config)
     if surface == 'chat':
-        text = ctx.commands['shadow']('doctor')
+        text = ctx.commands['shadow-trial']('doctor')
     else:
-        setup, handler = ctx.cli['shadow']
+        setup, handler = ctx.cli['shadow-trial']
         parser = argparse.ArgumentParser()
         setup(parser)
         handler(parser.parse_args(['doctor']))
@@ -66,7 +66,7 @@ def test_doctor_reports_incompatible_hermes_and_update_command(tmp_path, host, v
     host.running_hermes_version = lambda: version
     ctx, plugin = service(tmp_path)
     ready(plugin)
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert f'Hermes {version} does not meet plugin.yaml requires_hermes >=0.23.1.' in text
     assert 'Fix: hermes update' in text
 
@@ -77,7 +77,7 @@ def test_doctor_reports_unknown_hermes_version(tmp_path, host):
     host.running_hermes_version = unavailable
     ctx, plugin = service(tmp_path)
     ready(plugin)
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert 'Hermes version could not be detected' in text
     assert 'Fix: hermes update' in text
 
@@ -87,12 +87,12 @@ def test_doctor_reports_missing_models_judge_and_profile_scoped_fixes(tmp_path, 
     ctx.profile_name = 'work'
     ready(plugin)
     plugin.catalog = [Model(CURRENT.provider, CURRENT.model, reachable=False)]
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert 'Usable models: none' in text
     assert 'at least one other model to try' in text
     assert 'Third-maker judge: unavailable' in text
     assert 'Fix: hermes -p work model' in text
-    assert 'hermes shadow try <model> --judge <judge>' not in text
+    assert 'hermes shadow-trial try <model> --judge <judge>' not in text
     assert not ctx.capture
 
 
@@ -102,7 +102,7 @@ def test_backup_judging_does_not_count_as_third_maker(tmp_path, host, catalog):
     ready(plugin)
     plugin.catalog = catalog
     assert plugin.availability() == (True, True)
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert 'Third-maker judge: unavailable' in text
     assert 'Fix: hermes model' in text
 
@@ -116,7 +116,7 @@ def test_doctor_uses_host_grants_and_exact_enable_fix(tmp_path, host):
     entry['llm'] = {'allow_provider_override': True, 'allow_model_override': True}
     entry['allow_gateway_injection'] = False
     before = deepcopy(config)
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert 'llm.provider_override: not granted' in text
     assert 'llm.model_override: not granted' in text
     assert 'Fix: hermes -p work plugins enable shadow-trial' in text
@@ -132,9 +132,9 @@ def test_doctor_falls_back_to_legacy_grants_when_host_api_is_absent(tmp_path, ho
     entry = config['plugins']['entries']['shadow-trial']
     entry.pop('granted_capabilities')
     entry['llm'] = {'allow_provider_override': True, 'allow_model_override': True}
-    assert 'not granted' not in ctx.commands['shadow']('doctor')
+    assert 'not granted' not in ctx.commands['shadow-trial']('doctor')
     entry['llm']['allow_model_override'] = False
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert 'llm.model_override: not granted' in text
     assert 'Fix: hermes plugins enable shadow-trial' in text
 
@@ -145,9 +145,9 @@ def test_named_profile_keeps_live_verification_fixes_in_the_same_profile(tmp_pat
     ctx.profile_name = 'work'
     ready(plugin)
     plugin.launcher.isolation_verified = False
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     text += pair_doctor({}, profile_name=ctx.profile_name)
-    assert 'hermes -p work shadow doctor --verify' in text
-    assert 'hermes -p work shadow doctor --verify-pair' in text
-    assert 'Run hermes shadow doctor' not in text
+    assert 'hermes -p work shadow-trial doctor --verify' in text
+    assert 'hermes -p work shadow-trial doctor --verify-pair' in text
+    assert 'Run hermes shadow-trial doctor' not in text
     assert not ctx.capture

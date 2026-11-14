@@ -30,20 +30,20 @@ def test_trial_uses_switch_is_active_instead_of_a_watching_literal(tmp_path, mon
     ctx.shadow_switch = SimpleNamespace(engine=engine)
     plugin.selector = lambda **_: pytest.fail('an active watch must refuse before turn selection')
     assert is_active(engine.record)
-    assert ctx.commands['shadow'](f'try {TRIAL.model}') == 'A switch is in progress. Finish it or undo it first.'
+    assert ctx.commands['shadow-trial'](f'try {TRIAL.model}') == 'A switch is in progress. Finish it or undo it first.'
 
     with engine.store.transaction() as holder:
         holder[0].phase = 'watching'
     assert not is_active(engine.record)
     plugin.selector = lambda **kw: selection(tmp_path, kw.get('count', 30))
-    text = ctx.commands['shadow'](f'try {TRIAL.model}')
+    text = ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     assert 'A switch is in progress' not in text
     assert 'Try GPT-6 Luna' in text
 
     with engine.store.transaction() as holder:
         holder[0].phase = 'watch'
     monkeypatch.setattr('shadow.switch.is_active', lambda _record: False)
-    refused = ctx.commands['shadow'](f'try {TRIAL.model}')
+    refused = ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     assert 'A switch is in progress' not in refused
 
 

@@ -222,7 +222,7 @@
   "desktop.start.only": "{provider} only",
   "desktop.start.who": "{maker} · {provider}",
   "desktop.start.more": "More: {command}",
-  "desktop.start.more_command": "/shadow try <model> --judge <model>",
+  "desktop.start.more_command": "/shadow-trial try <model> --judge <model>",
   "desktop.start.see": "See the {picked}",
   "desktop.left.too_long": "{count} too long to replay",
   "desktop.left.too_short": "{count} too short to tell models apart",
