@@ -209,7 +209,7 @@ def test_unknown_price_keeps_the_token_line_and_refuses_start(tmp_path):
 
 def test_desktop_registration_reads_saved_tests_from_the_profile_data_dir(tmp_path, monkeypatch):
     import shadow
-    db_path = tmp_path / 'plugin-data' / 'shadow' / 'trial.sqlite'
+    db_path = tmp_path / 'plugin-data' / 'shadow-trial' / 'trial.sqlite'
     db_path.parent.mkdir(parents=True)
 
     def open_db(*_args):

@@ -145,7 +145,7 @@ def test_record_cannot_be_copied_to_another_data_directory(tmp_path):
 
 def test_authentication_material_stays_outside_the_record_directory(tmp_path):
     identity = isolation.Identity('9.9.9', 'abcdef', '0.1.0', 'shadow-files', 'demo')
-    directory = tmp_path / 'plugin-data' / 'shadow'
+    directory = tmp_path / 'plugin-data' / 'shadow-trial'
     isolation.write_record(directory, identity, passed_checks())
     assert [path.name for path in directory.iterdir()] == ['isolation.json']
     key = isolation.verifier_key_path(directory)

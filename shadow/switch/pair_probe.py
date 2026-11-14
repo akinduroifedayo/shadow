@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from ..common.copy import copy
 from ..common.discovery import ModelUnavailable
+from ..common.storage import STORAGE_NAME
 from .domain import Route
 from .reasoning import pair_reasoning
 
@@ -249,7 +250,7 @@ def run_command(service, *, terminal, yes, old_model=None, new_model=None, provi
         return _command_failure('doctor.pair_fail', 'profile_home_unavailable')
     probe = PairProbe(ctx=service.ctx,
                       write=lambda entry: save_pair(service.ctx, entry),
-                      evidence_dir=home / 'plugin-data' / 'shadow', config=config)
+                      evidence_dir=home / 'plugin-data' / STORAGE_NAME, config=config)
     passed = probe.run(provider, pair[0], pair[1])
     text = copy('doctor.pair_pass') if passed else copy('doctor.pair_fail') + '\n' + copy('switch.doctor.pair_failure_reason', reason=probe.reason_code)
     if probe.reason_code == 'llm_trust_denied':

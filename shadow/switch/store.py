@@ -12,6 +12,7 @@ import tempfile
 from threading import RLock
 
 from .domain import SwitchRecord, turn_key
+from ..common.storage import STORAGE_NAME
 
 
 class Store:
@@ -109,7 +110,7 @@ class Store:
                 self.connection = sqlite3.connect(self.path)
             else:
                 from plugins.plugin_storage import plugin_db
-                self.connection = plugin_db("shadow", "switch.db")
+                self.connection = plugin_db(STORAGE_NAME, "switch.db")
         if self.salt_path is None:
             self._locate_salt_file(self.connection)
         return self.connection

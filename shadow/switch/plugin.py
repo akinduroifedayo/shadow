@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 from ..common.discovery import ModelUnavailable, discover_models
 from ..common.commands import COMMAND_NAME
+from ..common.storage import STORAGE_NAME
 from .copy import copy, fields, render_notice, status
 from .defaults import DefaultWriter
 from .decision import SwitchBlocked
@@ -351,12 +352,12 @@ def register(ctx):
         migrate_legacy_pairs(ctx, config_reader())
     except Exception:
         logger.warning('Legacy pair proofs were not migrated. Re-verify with /shadow-trial doctor --verify-pair.')
-    data_dir = profile_home / "plugin-data" / "shadow"
+    data_dir = profile_home / "plugin-data" / STORAGE_NAME
 
     def open_database():
         if Path(get_hermes_home()).resolve() != profile_home:
             raise RuntimeError("profile changed before opening switch storage")
-        return plugin_db("shadow", "switch.db")
+        return plugin_db(STORAGE_NAME, "switch.db")
 
     engine = Engine(Store(path=data_dir / "switch.db", salt_path=data_dir / "switch.salt",
                           connection_factory=open_database),

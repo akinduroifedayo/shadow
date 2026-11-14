@@ -59,7 +59,7 @@ def test_first_switch_persists_and_restart_uses_hermes_connection(storage_enviro
     service = register(Context())
     service.engine.verified_pair = lambda old, new: True
     record = service.engine.start(Proposal("saved-test", OLD, NEW, "better"), switch_id="saved-switch")
-    expected_path = profile[0] / "plugin-data" / "shadow" / "switch.db"
+    expected_path = profile[0] / "plugin-data" / "shadow-trial" / "switch.db"
     assert opened == [expected_path]
     assert expected_path.exists()
     assert (expected_path.parent / "switch.salt").exists()

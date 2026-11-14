@@ -64,7 +64,7 @@ def _doctor(probe, home):
                 label = "llm." + other.rsplit("allow_", 1)[1]
                 probe.expect(f"{label}: granted" in text, f"doctor did not report granted {other}")
         probe.expect(_STATE["config"] == before, f"doctor changed the config while reporting {setting}")
-        database = home / "plugin-data" / "shadow" / "state.db"
+        database = home / "plugin-data" / "shadow-trial" / "data.db"
         rows = 0
         if database.exists():
             connection = sqlite3.connect(database)
