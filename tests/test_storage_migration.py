@@ -1,0 +1,324 @@
+from contextlib import closing
+import os
+from pathlib import Path
+import sqlite3
+import sys
+
+import pytest
+
+from fixtures import FakeContext
+from shadow import register
+from shadow.common.storage import Store as TrialStore
+from shadow.common.storage_migration import migrate_legacy_storage
+from shadow.switch.domain import SwitchRecord
+from shadow.switch.store import Store as SwitchStore
+from test_hermes_plugin_loader import _install_host
+from test_switch_safety import NEW, OLD
+
+
+@pytest.fixture
+def locations(tmp_path, monkeypatch):
+    _install_host(monkeypatch, tmp_path)
+    return tmp_path / 'plugin-data' / 'shadow', tmp_path / 'plugin-data' / 'shadow-trial'
+
+
+def trial_database(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    store = TrialStore(path)
+    store.save({'id': 'saved-trial', 'created_at': 1, 'state': 'finished'})
+    store.close()
+
+
+def switch_database(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    store = SwitchStore(path=path)
+    with store.transaction(create=True) as holder:
+        holder[0] = SwitchRecord('saved-switch', 'saved-trial', OLD, NEW, 'gradual')
+    identity = store.identity('conversation')
+    store.connection.close()
+    return identity
+
+
+def snapshot(directory):
+    return {path.name: path.read_bytes() for path in directory.iterdir() if path.is_file()}
+
+
+def test_package_registration_copies_ours_before_opening_either_database(locations, monkeypatch):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    identity = switch_database(legacy / 'switch.db')
+    (legacy / 'pair-evidence.json').write_text('unrelated evidence')
+    (legacy / 'other.txt').write_text('another plugin owns this')
+    before = snapshot(legacy)
+    listing = sorted(legacy.iterdir())
+    opened = []
+
+    def database(name, filename='data.db'):
+        assert (destination / 'data.db').is_file()
+        assert (destination / 'switch.db').is_file()
+        assert (destination / 'switch.salt').is_file()
+        opened.append((name, filename))
+        return sqlite3.connect(destination / filename)
+
+    monkeypatch.setattr(sys.modules['plugins.plugin_storage'], 'plugin_db', database)
+    ctx = FakeContext()
+    trial = register(ctx)
+    assert trial.store.get('saved-trial')['state'] == 'finished'
+    assert ctx.shadow_switch.engine.record.id == 'saved-switch'
+    assert ctx.shadow_switch.engine.store.identity('conversation') == identity
+    assert opened == [('shadow-trial', 'data.db'), ('shadow-trial', 'switch.db')]
+    assert sorted(legacy.iterdir()) == listing
+    assert snapshot(legacy) == before
+    assert set(path.name for path in destination.iterdir()) == {'data.db', 'switch.db', 'switch.salt'}
+    assert (destination / 'switch.salt').stat().st_mode & 0o777 == 0o600
+    trial.store.close()
+    ctx.shadow_switch.engine.store.connection.close()
+
+
+@pytest.mark.parametrize('filename,tables', [
+    ('data.db', ['other_records']),
+    ('data.db', ['trial_records']),
+    ('data.db', ['trial_cancellations']),
+    ('switch.db', ['switch_records']),
+])
+def test_foreign_databases_are_skipped(locations, filename, tables):
+    legacy, destination = locations
+    legacy.mkdir(parents=True)
+    with closing(sqlite3.connect(legacy / filename)) as connection:
+        for table in tables:
+            connection.execute(f'CREATE TABLE {table} (value TEXT)')
+        connection.commit()
+    (legacy / 'switch.salt').write_bytes(b's' * 32)
+    before = snapshot(legacy)
+    migrate_legacy_storage()
+    assert not destination.exists()
+    assert snapshot(legacy) == before
+
+
+@pytest.mark.parametrize('existing', ['data.db', 'switch.db'])
+def test_each_database_copies_independently_without_replacing_existing_files(locations, existing):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    switch_database(legacy / 'switch.db')
+    before = snapshot(legacy)
+    destination.mkdir()
+    (destination / existing).write_bytes(b'keep destination unchanged')
+    migrate_legacy_storage()
+    assert (destination / existing).read_bytes() == b'keep destination unchanged'
+    copied = 'switch.db' if existing == 'data.db' else 'data.db'
+    with closing(sqlite3.connect(destination / copied)) as connection:
+        table = 'shadow_switch_records' if copied == 'switch.db' else 'trial_records'
+        assert connection.execute(f'SELECT count(*) FROM {table}').fetchone() == (1,)
+    assert (destination / 'switch.salt').exists() == (copied == 'switch.db')
+    assert snapshot(legacy) == before
+
+
+def test_missing_legacy_folder_creates_nothing(locations):
+    legacy, destination = locations
+    migrate_legacy_storage()
+    assert not legacy.exists()
+    assert not destination.parent.exists()
+
+
+def test_second_run_leaves_both_locations_unchanged(locations):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    switch_database(legacy / 'switch.db')
+    migrate_legacy_storage()
+    before = snapshot(legacy), snapshot(destination)
+    migrate_legacy_storage()
+    assert (snapshot(legacy), snapshot(destination)) == before
+
+
+@pytest.mark.parametrize('salt', [None, b'', b's' * 31, b's' * 32, b's' * 33])
+def test_salt_requires_a_verified_switch_database_and_exact_size(locations, salt):
+    legacy, destination = locations
+    switch_database(legacy / 'switch.db')
+    (legacy / 'switch.salt').unlink()
+    if salt is not None:
+        (legacy / 'switch.salt').write_bytes(salt)
+    migrate_legacy_storage()
+    assert (destination / 'switch.db').is_file()
+    if salt is not None and len(salt) == 32:
+        assert (destination / 'switch.salt').read_bytes() == salt
+    else:
+        assert not (destination / 'switch.salt').exists()
+
+
+@pytest.mark.parametrize('kind', ['absent', 'foreign', 'symlink', 'directory'])
+def test_salt_is_not_copied_by_itself_or_from_nonregular_files(locations, kind):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    if kind == 'foreign':
+        with closing(sqlite3.connect(legacy / 'switch.db')) as connection:
+            connection.execute('CREATE TABLE foreign_records (value TEXT)')
+    elif kind in {'symlink', 'directory'}:
+        switch_database(legacy / 'switch.db')
+        (legacy / 'switch.salt').unlink()
+    if kind == 'symlink':
+        (legacy / 'other-salt').write_bytes(b's' * 32)
+        (legacy / 'switch.salt').symlink_to(legacy / 'other-salt')
+    elif kind == 'directory':
+        (legacy / 'switch.salt').mkdir()
+    else:
+        (legacy / 'switch.salt').write_bytes(b's' * 32)
+    migrate_legacy_storage()
+    assert not (destination / 'switch.salt').exists()
+
+
+def test_existing_destination_salt_is_preserved(locations):
+    legacy, destination = locations
+    switch_database(legacy / 'switch.db')
+    destination.mkdir()
+    (destination / 'switch.salt').write_bytes(b'd' * 32)
+    migrate_legacy_storage()
+    assert (destination / 'switch.db').is_file()
+    assert (destination / 'switch.salt').read_bytes() == b'd' * 32
+
+
+def test_salt_table_alone_identifies_a_legacy_switch_database(locations):
+    legacy, destination = locations
+    legacy.mkdir(parents=True)
+    with closing(sqlite3.connect(legacy / 'switch.db')) as connection:
+        connection.execute('CREATE TABLE shadow_switch_salt (salt BLOB NOT NULL)')
+        connection.execute('INSERT INTO shadow_switch_salt VALUES (?)', (b's' * 32,))
+        connection.commit()
+    migrate_legacy_storage()
+    with closing(sqlite3.connect(destination / 'switch.db')) as connection:
+        assert connection.execute('SELECT salt FROM shadow_switch_salt').fetchone() == (b's' * 32,)
+
+
+def test_checkpointed_wal_database_never_creates_legacy_sidecars(locations):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    with closing(sqlite3.connect(legacy / 'data.db')) as connection:
+        connection.execute('PRAGMA journal_mode=WAL')
+    before = snapshot(legacy)
+    migrate_legacy_storage()
+    assert snapshot(legacy) == before
+    assert (destination / 'data.db').is_file()
+
+
+@pytest.mark.parametrize('suffix', ['-wal', '-journal'])
+def test_pending_wal_or_journal_is_skipped_without_writing_legacy_files(locations, suffix):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    (legacy / ('data.db' + suffix)).write_bytes(b'pending changes')
+    before = snapshot(legacy)
+    migrate_legacy_storage()
+    assert not destination.exists()
+    assert snapshot(legacy) == before
+
+
+def test_live_wal_database_is_skipped_without_changing_its_sidecars(locations):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    with closing(sqlite3.connect(legacy / 'data.db')) as connection:
+        connection.execute('PRAGMA journal_mode=WAL')
+        connection.execute("INSERT INTO trial_cancellations VALUES ('pending')")
+        connection.commit()
+        before = snapshot(legacy)
+        migrate_legacy_storage()
+        assert not destination.exists()
+        assert snapshot(legacy) == before
+
+
+def test_corrupt_trial_does_not_block_copying_our_switch_database(locations, caplog):
+    legacy, destination = locations
+    switch_database(legacy / 'switch.db')
+    (legacy / 'data.db').write_bytes(b'invalid database')
+    migrate_legacy_storage()
+    assert not (destination / 'data.db').exists()
+    assert (destination / 'switch.db').is_file()
+    assert (destination / 'switch.salt').is_file()
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+
+
+def test_failed_backup_never_publishes_a_partial_database_and_can_retry(locations, monkeypatch, caplog):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    before = snapshot(legacy)
+    connect = sqlite3.connect
+
+    class BrokenBackup(sqlite3.Connection):
+        def backup(self, target):
+            target.execute('CREATE TABLE partial_copy (value TEXT)')
+            target.commit()
+            raise sqlite3.DatabaseError('private failure details')
+
+    def broken_connect(*args, **kwargs):
+        if kwargs.get('uri'):
+            kwargs['factory'] = BrokenBackup
+        return connect(*args, **kwargs)
+
+    with monkeypatch.context() as failing:
+        failing.setattr(sqlite3, 'connect', broken_connect)
+        migrate_legacy_storage()
+    assert snapshot(destination) == {}
+    assert snapshot(legacy) == before
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    migrate_legacy_storage()
+    assert set(snapshot(destination)) == {'data.db'}
+
+
+def test_corrupt_sources_log_one_fixed_message_and_allow_registration(locations, caplog):
+    legacy, destination = locations
+    legacy.mkdir(parents=True)
+    for filename in ('data.db', 'switch.db'):
+        (legacy / filename).write_bytes(b'invalid database with private details')
+    register(FakeContext())
+    messages = [record.getMessage() for record in caplog.records
+                if record.name == 'shadow.common.storage_migration']
+    assert messages == ['Legacy Shadow storage was not copied.']
+    assert not destination.exists()
+
+
+def test_database_publication_never_overwrites_a_racing_destination(locations, monkeypatch):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    link = os.link
+
+    def racing_link(source, target):
+        Path(target).write_bytes(b'another writer won')
+        link(source, target)
+
+    monkeypatch.setattr(os, 'link', racing_link)
+    migrate_legacy_storage()
+    assert snapshot(destination) == {'data.db': b'another writer won'}
+
+
+def test_failed_publication_retries_with_the_same_switch_identity(locations, monkeypatch, caplog):
+    legacy, destination = locations
+    identity = switch_database(legacy / 'switch.db')
+    link = os.link
+
+    def fail_database(source, target):
+        if Path(target).name == 'switch.db':
+            raise OSError('private failure details')
+        link(source, target)
+
+    with monkeypatch.context() as failing:
+        failing.setattr(os, 'link', fail_database)
+        migrate_legacy_storage()
+    assert not (destination / 'switch.db').exists()
+    assert set(snapshot(destination)) == {'switch.salt'}
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    migrate_legacy_storage()
+    store = SwitchStore(path=destination / 'switch.db')
+    assert store.read().id == 'saved-switch'
+    assert store.identity('conversation') == identity
+    store.connection.close()
+
+
+def test_migration_follows_the_active_hermes_home(locations, tmp_path, monkeypatch):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    active_home = tmp_path / 'other-profile'
+    monkeypatch.setattr(sys.modules['hermes_constants'], 'get_hermes_home', lambda: active_home)
+    migrate_legacy_storage()
+    assert not destination.exists()
+    assert not active_home.exists()
+    trial_database(active_home / 'plugin-data' / 'shadow' / 'data.db')
+    migrate_legacy_storage()
+    assert (active_home / 'plugin-data' / 'shadow-trial' / 'data.db').is_file()
+    assert not destination.exists()
