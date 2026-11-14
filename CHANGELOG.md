@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Register `/shadow-trial` and `hermes shadow-trial` so commands coexist with the other catalog plugin.
+- Store trial records, switch records, identity salts, and pair evidence in `plugin-data/shadow-trial`.
+- On load, copy legacy `data.db` and `switch.db` from `plugin-data/shadow` only when their tables identify them as Shadow's and the destination is absent. Copy a regular 32-byte `switch.salt` only with a verified switch database. Preserve existing destinations and leave legacy files and evidence unchanged.
+- Use SQLite backups from immutable read-only sources. Skip databases with WAL or journal files to avoid writing into the shared legacy folder.
+
 ## 0.1.0 - 2026-11-11
 
 - Replay eligible saved Hermes turns on a candidate and the current model.
