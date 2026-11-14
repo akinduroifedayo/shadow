@@ -122,10 +122,9 @@ refused without starting a switch. Trial owns the eligibility card for models
 whose provider matches but whose base URL or API mode differs. Those pairs
 are unavailable, including with a runtime proof entry.
 
-Switch keeps its records in `switch.db`, alongside trial's `data.db`, in the
-`shadow-trial` directory under `plugin-data`. Hermes supports a filename argument
-to `plugin_db`. Switch uses that API lazily to preserve its connection settings
-and saved records.
+Switch keeps its records in `plugin-data/shadow-trial/switch.db`, alongside
+trial's `data.db`. Hermes supports a filename argument to `plugin_db`. Switch
+uses that API lazily to preserve its connection settings and saved records.
 Registration and ordinary turns with no saved switch create no database or
 data directory. The identity salt is stored in `switch.salt` on first use.
 Shared storage and copy adapters live in `shadow.common`.

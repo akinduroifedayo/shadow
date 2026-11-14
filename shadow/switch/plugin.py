@@ -11,7 +11,7 @@ from time import monotonic
 logger = logging.getLogger(__name__)
 
 from ..common.discovery import ModelUnavailable, discover_models
-from ..common.commands import COMMAND_NAME
+from ..common.commands import COMMAND_NAME, command_prefix
 from ..common.storage import STORAGE_NAME
 from .copy import copy, fields, render_notice, status
 from .defaults import DefaultWriter
@@ -196,7 +196,7 @@ class SwitchPlugin:
                     self.engine.validate_routes(proposal)
                     from .decision import switch_warning
                     if proposal.override_reason and not anyway:
-                        command = 'hermes shadow-trial' if terminal else '/shadow-trial'
+                        command = command_prefix(terminal)
                         target = proposal.test_id or target
                         return switch_warning(proposal) + '\n' + copy('switch.override.confirm_command', command=command, target=shlex.quote(target))
                     self.engine.start(proposal, confirm_override=anyway)

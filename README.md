@@ -11,13 +11,13 @@ Shadow is a Hermes plugin. It replays recent saved turns on the model you want t
 Use Hermes 0.23.1 or later. Run this in an interactive terminal:
 
 ```bash
-hermes plugins install 'akinduroifedayo/shadow' --enable
+hermes plugins install akinduroifedayo/shadow --enable
 ```
 
 For a named profile, use this command instead. Replace `<profile>` with its name:
 
 ```bash
-hermes -p <profile> plugins install 'akinduroifedayo/shadow' --enable
+hermes -p <profile> plugins install akinduroifedayo/shadow --enable
 ```
 
 Review and accept Hermes's capability consent prompt. Shadow uses your profile's provider access. Configure models and sign in through `hermes model`.
