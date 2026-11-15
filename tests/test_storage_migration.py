@@ -26,6 +26,19 @@ def locations(tmp_path, monkeypatch):
     return tmp_path / 'plugin-data' / 'shadow', tmp_path / 'plugin-data' / 'shadow-trial'
 
 
+@pytest.fixture
+def file_backed_locations(locations, monkeypatch):
+    legacy, destination = locations
+
+    def database(name, filename='data.db'):
+        assert name == 'shadow-trial'
+        destination.mkdir(parents=True, exist_ok=True)
+        return sqlite3.connect(destination / filename)
+
+    monkeypatch.setattr(sys.modules['plugins.plugin_storage'], 'plugin_db', database)
+    return legacy, destination
+
+
 def trial_database(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     store = TrialStore(path)
@@ -87,6 +100,110 @@ def test_package_registration_copies_ours_before_opening_either_database(locatio
     assert (destination / 'switch.salt').stat().st_mode & 0o777 == 0o600
     trial.store.close()
     ctx.shadow_switch.engine.store.connection.close()
+
+
+@pytest.mark.parametrize('filename', ['data.db', 'switch.db'])
+@pytest.mark.parametrize('error', [OSError, sqlite3.DatabaseError])
+def test_registration_retries_failed_copy_before_opening_storage(
+        file_backed_locations, monkeypatch, caplog, filename, error):
+    legacy, destination = file_backed_locations
+    trial_database(legacy / 'data.db')
+    identity = switch_database(legacy / 'switch.db')
+    (legacy / (filename + '-wal')).write_bytes(b'')
+    before = snapshot(legacy)
+    connect = sqlite3.connect
+    work = []
+
+    def fail_first_recovery(database, *args, **kwargs):
+        if '.legacy-work-' in str(database):
+            work.append(next(destination.glob('.legacy-work-*')))
+            if len(work) == 1:
+                raise error('private failure details')
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', fail_first_recovery)
+    for _ in range(2):
+        ctx = FakeContext()
+        trial = register(ctx)
+        try:
+            assert trial.store.get('saved-trial')['state'] == 'finished'
+            assert ctx.shadow_switch.engine.record.id == 'saved-switch'
+            assert ctx.shadow_switch.engine.store.identity('conversation') == identity
+        finally:
+            trial.store.close()
+            if ctx.shadow_switch.engine.store.connection is not None:
+                ctx.shadow_switch.engine.store.connection.close()
+    assert len(work) == len(set(work)) == 2
+    assert all(not directory.exists() for directory in work)
+    assert set(os.listdir(destination)) == {'data.db', 'switch.db', 'switch.salt'}
+    with closing(connect(destination / 'data.db')) as copied:
+        assert copied.execute('SELECT id FROM trial_records').fetchall() == [('saved-trial',)]
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+    assert caplog.messages == []
+
+
+def test_registration_starts_empty_when_all_copy_attempts_fail(
+        file_backed_locations, monkeypatch, caplog):
+    legacy, destination = file_backed_locations
+    trial_database(legacy / 'data.db')
+    (legacy / 'data.db-wal').write_bytes(b'')
+    before = snapshot(legacy)
+    connect = sqlite3.connect
+    work = []
+
+    def fail_recovery(database, *args, **kwargs):
+        if '.legacy-work-' in str(database):
+            work.append(next(destination.glob('.legacy-work-*')))
+            raise sqlite3.DatabaseError('private failure details')
+        return connect(database, *args, **kwargs)
+
+    with monkeypatch.context() as failing:
+        failing.setattr(sqlite3, 'connect', fail_recovery)
+        ctx = FakeContext()
+        trial = register(ctx)
+        assert trial.store.list() == []
+        assert ctx.shadow_switch.engine.record is None
+        trial.store.close()
+    assert len(work) == len(set(work)) == 3
+    assert all(not directory.exists() for directory in work)
+    assert set(os.listdir(destination)) == {'data.db'}
+    assert caplog.messages == [
+        'Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+        'for failed copies and leaves plugin-data/shadow unchanged.'
+    ]
+    caplog.clear()
+    ctx = FakeContext()
+    trial = register(ctx)
+    assert trial.store.list() == []
+    assert ctx.shadow_switch.engine.record is None
+    trial.store.close()
+    assert caplog.messages == []
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+
+
+def test_registration_preserves_storage_created_during_publication(
+        file_backed_locations, monkeypatch, caplog):
+    legacy, destination = file_backed_locations
+    trial_database(legacy / 'data.db')
+    before = snapshot(legacy)
+    link = os.link
+
+    def racing_link(source, target):
+        with closing(sqlite3.connect(target)):
+            pass
+        link(source, target)
+
+    monkeypatch.setattr(os, 'link', racing_link)
+    ctx = FakeContext()
+    trial = register(ctx)
+    assert trial.store.list() == []
+    trial.store.close()
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+    assert not list(destination.glob('.legacy-*'))
+    assert caplog.messages == []
 
 
 @pytest.mark.parametrize('filename,tables', [
@@ -331,12 +448,15 @@ def test_recovery_failure_warns_and_removes_private_work_files(locations, monkey
     migrate_legacy_storage()
     assert set(os.listdir(destination)) == set()
     assert snapshot(legacy) == before
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                               'for failed copies and leaves plugin-data/shadow unchanged.']
 
 
 @pytest.mark.parametrize('suffix', ['', '-wal', '-journal'])
 @pytest.mark.parametrize('changed', ['size', 'mtime_ns'])
-def test_changed_source_is_not_published_or_modified(locations, monkeypatch, caplog, suffix, changed):
+@pytest.mark.parametrize('failures', [1, 3])
+def test_changed_source_is_retried_without_modifying_legacy(
+        locations, monkeypatch, caplog, suffix, changed, failures):
     legacy, destination = locations
     trial_database(legacy / 'data.db')
     (legacy / 'data.db-wal').write_bytes(b'')
@@ -347,6 +467,7 @@ def test_changed_source_is_not_published_or_modified(locations, monkeypatch, cap
     copyfileobj = storage_migration.shutil.copyfileobj
     lstat = Path.lstat
     copied_all = False
+    changes = []
 
     def copy_then_signal(source, copied):
         nonlocal copied_all
@@ -355,8 +476,11 @@ def test_changed_source_is_not_published_or_modified(locations, monkeypatch, cap
             copied_all = True
 
     def changed_metadata(path, *args, **kwargs):
+        nonlocal copied_all
         info = lstat(path, *args, **kwargs)
-        if path == target and copied_all:
+        if path == target and copied_all and len(changes) < failures:
+            copied_all = False
+            changes.append(path)
             return SimpleNamespace(st_size=info.st_size + (changed == 'size'),
                                    st_mtime_ns=info.st_mtime_ns + (changed == 'mtime_ns'))
         return info
@@ -365,11 +489,13 @@ def test_changed_source_is_not_published_or_modified(locations, monkeypatch, cap
         changing.setattr(storage_migration.shutil, 'copyfileobj', copy_then_signal)
         changing.setattr(Path, 'lstat', changed_metadata)
         migrate_legacy_storage()
-    assert copied_all
-    assert set(os.listdir(destination)) == set()
+    assert len(changes) == failures
+    assert set(os.listdir(destination)) == ({'data.db'} if failures == 1 else set())
     assert snapshot(legacy) == before
     assert snapshot_metadata(legacy) == metadata
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    warning = ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+               'for failed copies and leaves plugin-data/shadow unchanged.']
+    assert caplog.messages == ([] if failures == 1 else warning)
     migrate_legacy_storage()
     assert set(os.listdir(destination)) == {'data.db'}
     assert snapshot(legacy) == before
@@ -445,7 +571,8 @@ def test_recovery_refuses_nonregular_sidecars_without_touching_legacy_files(loca
         assert sidecar.is_symlink()
         assert (legacy / 'unrelated').read_bytes() == b'other plugin data'
     assert set(os.listdir(destination)) == set()
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                               'for failed copies and leaves plugin-data/shadow unchanged.']
 
 
 def test_recovered_database_must_pass_quick_check_before_publication(locations, monkeypatch, caplog):
@@ -471,7 +598,8 @@ def test_recovered_database_must_pass_quick_check_before_publication(locations, 
     migrate_legacy_storage()
     assert set(os.listdir(destination)) == {'switch.db', 'switch.salt'}
     assert snapshot(legacy) == before
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                               'for failed copies and leaves plugin-data/shadow unchanged.']
 
 
 def test_corrupt_trial_does_not_block_copying_our_switch_database(locations, caplog):
@@ -482,7 +610,8 @@ def test_corrupt_trial_does_not_block_copying_our_switch_database(locations, cap
     assert not (destination / 'data.db').exists()
     assert (destination / 'switch.db').is_file()
     assert (destination / 'switch.salt').is_file()
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                               'for failed copies and leaves plugin-data/shadow unchanged.']
 
 
 def test_failed_backup_never_publishes_a_partial_database_and_can_retry(locations, monkeypatch, caplog):
@@ -507,7 +636,8 @@ def test_failed_backup_never_publishes_a_partial_database_and_can_retry(location
         migrate_legacy_storage()
     assert snapshot(destination) == {}
     assert snapshot(legacy) == before
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                               'for failed copies and leaves plugin-data/shadow unchanged.']
     migrate_legacy_storage()
     assert set(snapshot(destination)) == {'data.db'}
 
@@ -520,7 +650,8 @@ def test_corrupt_sources_log_one_fixed_message_and_allow_registration(locations,
     register(FakeContext())
     messages = [record.getMessage() for record in caplog.records
                 if record.name == 'shadow.common.storage_migration']
-    assert messages == ['Legacy Shadow storage was not copied.']
+    assert messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                        'for failed copies and leaves plugin-data/shadow unchanged.']
     assert not destination.exists()
 
 
@@ -553,7 +684,8 @@ def test_failed_publication_retries_with_the_same_switch_identity(locations, mon
         migrate_legacy_storage()
     assert not (destination / 'switch.db').exists()
     assert set(snapshot(destination)) == {'switch.salt'}
-    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                               'for failed copies and leaves plugin-data/shadow unchanged.']
     migrate_legacy_storage()
     store = SwitchStore(path=destination / 'switch.db')
     assert store.read().id == 'saved-switch'

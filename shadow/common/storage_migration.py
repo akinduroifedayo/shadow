@@ -37,7 +37,8 @@ def migrate_legacy_storage():
     except Exception:
         failed = True
     if failed:
-        logger.warning('Legacy Shadow storage was not copied.')
+        logger.warning('Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+                       'for failed copies and leaves plugin-data/shadow unchanged.')
 
 
 def _sweep_temporary_files(directory):
@@ -55,6 +56,18 @@ def _sweep_temporary_files(directory):
 
 
 def _copy_database(source, destination, required, distinctive):
+    for attempt, delay in enumerate((0, 0.05, 0.2)):
+        if delay:
+            time.sleep(delay)
+        try:
+            _copy_database_once(source, destination, required, distinctive)
+            return
+        except (OSError, sqlite3.Error):
+            if attempt == 2:
+                raise
+
+
+def _copy_database_once(source, destination, required, distinctive):
     if os.path.lexists(destination) or not source.is_file() or source.is_symlink():
         return
     with _legacy_connection(source, destination.parent) as legacy:
