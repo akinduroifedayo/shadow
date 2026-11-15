@@ -107,7 +107,7 @@ def install_stubs(home: Path) -> None:
     plugins.__path__ = []
     storage = types.ModuleType("plugins.plugin_storage")
 
-    def plugin_db(name, filename="state.db"):
+    def plugin_db(name, filename="data.db"):
         target = home / "plugin-data" / name / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         return sqlite3.connect(target)

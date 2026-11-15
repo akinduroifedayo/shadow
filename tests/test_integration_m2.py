@@ -30,20 +30,20 @@ def test_trial_uses_switch_is_active_instead_of_a_watching_literal(tmp_path, mon
     ctx.shadow_switch = SimpleNamespace(engine=engine)
     plugin.selector = lambda **_: pytest.fail('an active watch must refuse before turn selection')
     assert is_active(engine.record)
-    assert ctx.commands['shadow'](f'try {TRIAL.model}') == 'A switch is in progress. Finish it or undo it first.'
+    assert ctx.commands['shadow-trial'](f'try {TRIAL.model}') == 'A switch is in progress. Finish it or undo it first.'
 
     with engine.store.transaction() as holder:
         holder[0].phase = 'watching'
     assert not is_active(engine.record)
     plugin.selector = lambda **kw: selection(tmp_path, kw.get('count', 30))
-    text = ctx.commands['shadow'](f'try {TRIAL.model}')
+    text = ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     assert 'A switch is in progress' not in text
     assert 'Try GPT-6 Luna' in text
 
     with engine.store.transaction() as holder:
         holder[0].phase = 'watch'
     monkeypatch.setattr('shadow.switch.is_active', lambda _record: False)
-    refused = ctx.commands['shadow'](f'try {TRIAL.model}')
+    refused = ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     assert 'A switch is in progress' not in refused
 
 
@@ -209,7 +209,7 @@ def test_unknown_price_keeps_the_token_line_and_refuses_start(tmp_path):
 
 def test_desktop_registration_reads_saved_tests_from_the_profile_data_dir(tmp_path, monkeypatch):
     import shadow
-    db_path = tmp_path / 'plugin-data' / 'shadow' / 'trial.sqlite'
+    db_path = tmp_path / 'plugin-data' / 'shadow-trial' / 'trial.sqlite'
     db_path.parent.mkdir(parents=True)
 
     def open_db(*_args):

@@ -9,14 +9,17 @@ from pathlib import Path
 from .scrub import Scrubber
 
 
+STORAGE_NAME = 'shadow-trial'
+
+
 def plugin_data_dir():
     from plugins.plugin_storage import plugin_data_dir as data_dir
-    return data_dir('shadow')
+    return data_dir(STORAGE_NAME)
 
 
 def plugin_db():
     from plugins.plugin_storage import plugin_db as database
-    return database('shadow')
+    return database(STORAGE_NAME)
 
 
 def parse_trial_record(record):

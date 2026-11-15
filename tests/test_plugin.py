@@ -72,7 +72,7 @@ def test_registered_plugin_idle_full_turn_creates_no_data(tmp_path):
 def test_chat_start_controller_and_results_end_to_end(tmp_path):
     ctx, plugin = service(tmp_path)
     ctx.answers = ['start']
-    text = ctx.commands['shadow']('try gpt-6-luna --judge claude-sonnet-4-5', session_id='origin')
+    text = ctx.commands['shadow-trial']('try gpt-6-luna --judge claude-sonnet-4-5', session_id='origin')
     assert 'Try GPT-6 Luna' in text
     record = plugin.store.get()
     assert record['state'] == 'queued' and record['judge_source'] == 'user'
@@ -84,7 +84,7 @@ def test_chat_start_controller_and_results_end_to_end(tmp_path):
     saved = plugin.store.get(record['id'])
     assert saved['state'] == 'finished' and saved['totals']['pairs'] == 30
     assert len(ctx.messages) <= 3
-    result = ctx.commands['shadow'](f'results {record["id"]} --stats')
+    result = ctx.commands['shadow-trial'](f'results {record["id"]} --stats')
     assert 'Net win rate' in result and 'your pick.' in result
     assert result.count('Broken calls') <= 1
     assert len(receipt_columns(saved)) == 5
@@ -94,7 +94,7 @@ def test_chat_start_controller_and_results_end_to_end(tmp_path):
 def test_cli_parser_and_yes_flow(tmp_path, capsys):
     ctx, plugin = service(tmp_path)
     plugin.launcher.launch = lambda record: finish_controller(ctx, plugin, record)
-    setup, handler = ctx.cli['shadow']
+    setup, handler = ctx.cli['shadow-trial']
     parser = argparse.ArgumentParser()
     setup(parser)
     handler(parser.parse_args(['try', TRIAL.model, '--yes', '--judge', OUTSIDE.model]))
@@ -107,11 +107,11 @@ def test_cli_parser_and_yes_flow(tmp_path, capsys):
 def test_no_start_for_over_cap_unknown_price_or_isolation(tmp_path):
     ctx, plugin = service(tmp_path)
     ctx.answers = ['start']
-    text = ctx.commands['shadow']('try gpt-6-luna --budget .01')
+    text = ctx.commands['shadow-trial']('try gpt-6-luna --budget .01')
     assert 'over your $0.01 cap' in text and '[Start]' not in text
     assert not plugin.launcher.launched
     plugin.launcher = ControllerLauncher(data_dir=tmp_path)
-    text = ctx.commands['shadow']('try gpt-6-luna')
+    text = ctx.commands['shadow-trial']('try gpt-6-luna')
     assert '[Start]' not in text
     assert not ctx.capture
 
@@ -120,7 +120,7 @@ def test_named_judge_refusals_send_nothing_and_create_no_record(tmp_path):
     ctx, plugin = service(tmp_path)
     for judge, expected in [(CURRENT.model, "The judge can't be one"), ('gpt-4.1', 'The judge has to come'), ('no-such-model', 'No model called')]:
         plugin.catalog.append(__import__('shadow.common.models', fromlist=['Model']).Model('openai-codex', 'gpt-4.1'))
-        text = ctx.commands['shadow'](f'try {TRIAL.model} --judge {judge}')
+        text = ctx.commands['shadow-trial'](f'try {TRIAL.model} --judge {judge}')
         assert expected in text
     assert not ctx.capture and not plugin.launcher.launched
     assert plugin.store.list() == []
@@ -189,7 +189,7 @@ def test_start_reads_profile_tier_from_hermes_readonly_config(tmp_path, monkeypa
                             lambda **_: ModelCatalog.from_models(CURRENT, [CURRENT, TRIAL, OUTSIDE]))
     ctx.answers = ['cancel']
 
-    ctx.commands['shadow'](f'try {TRIAL.model} --turns 20', session_id='origin')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model} --turns 20', session_id='origin')
 
     record = plugin.store.get()
     assert loaded and config == original
@@ -207,7 +207,7 @@ def test_start_config_read_failure_never_assumes_normal_tier(tmp_path, monkeypat
     plugin.config_reader = None
     ctx.answers = ['cancel']
 
-    ctx.commands['shadow'](f'try {TRIAL.model} --turns 20', session_id='origin')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model} --turns 20', session_id='origin')
 
     assert plugin.store.list() == []
     assert not plugin.launcher.launched and not ctx.subagent_lifecycle.launches and not ctx.llm.calls
@@ -247,7 +247,7 @@ def test_disguised_plugin_import_uses_relative_imports(tmp_path):
 def test_controller_inherits_profile_tools_with_both_blockers(tmp_path, setting):
     ctx, plugin = service(tmp_path)
     ctx.answers = ['start']
-    ctx.commands['shadow'](f'try {TRIAL.model}')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     record = plugin.store.get()
     plugin.config_reader = lambda: {'delegation': {'inherit_mcp_toolsets': setting}}
     replies = ctx.hook('pre_llm_call', session_id='controller', user_message=f'shadow-controller:{record["id"]}:{record["controller_token"]}')
@@ -260,7 +260,7 @@ def test_launcher_cannot_overwrite_a_finished_controller_record(tmp_path):
     ctx, plugin = service(tmp_path)
     plugin.launcher.launch = lambda record: finish_controller(ctx, plugin, record)
     ctx.answers = ['start']
-    ctx.commands['shadow'](f'try {TRIAL.model}')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     assert plugin.store.get()['state'] == 'finished'
 
 
@@ -276,7 +276,7 @@ def test_cli_waits_for_fixture_verdict_and_prints_start_once(tmp_path, capsys):
 def test_start_card_fewer_turns_recomputes_estimate(tmp_path):
     ctx, plugin = service(tmp_path)
     ctx.answers = ['fewer', 'start']
-    ctx.commands['shadow'](f'try {TRIAL.model}')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     record = plugin.store.get()
     assert record['picked'] == 20 and record['state'] == 'queued'
     assert plugin.launcher.launched == [record['id']]
@@ -286,7 +286,7 @@ def test_start_card_fewer_turns_recomputes_estimate(tmp_path):
 def test_start_card_preview_can_drop_a_turn_before_start(tmp_path):
     ctx, plugin = service(tmp_path)
     ctx.answers = ['preview', 't0', 'start']
-    ctx.commands['shadow'](f'try {TRIAL.model}')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     record = plugin.store.get()
     assert record['picked'] == 29 and record['state'] == 'queued'
     assert 't0' not in {t['id'] for t in record['turns']}
@@ -298,7 +298,7 @@ def test_change_judge_hides_contestant_makers_and_updates_start_card(tmp_path):
     plugin_ctx, plugin = service(tmp_path)
     plugin.catalog.append(other)
     plugin_ctx.answers = ['judge', '1', 'start']
-    plugin_ctx.commands['shadow'](f'try {TRIAL.model}')
+    plugin_ctx.commands['shadow-trial'](f'try {TRIAL.model}')
     picker_text, choices = plugin_ctx.questions[1]
     assert 'Judge for this test' in picker_text and "OpenAI models aren't listed" in picker_text
     assert all('GPT' not in choice['label'] for choice in choices)
@@ -458,7 +458,7 @@ def test_chat_judge_picker_displays_an_unpriced_option_without_crashing(tmp_path
     plugin.catalog.append(Model('unknown-proxy', 'claude-opus-4-6'))
     ctx.answers = ['judge', '1', 'cancel']
 
-    ctx.commands['shadow'](f'try {TRIAL.model}')
+    ctx.commands['shadow-trial'](f'try {TRIAL.model}')
 
     choices = ctx.questions[1][1]
     assert 'price' in choices[1]['label']

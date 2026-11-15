@@ -187,8 +187,8 @@ def test_registered_hooks_remain_idle_across_a_full_turn(plugin):
 
 def test_cli_and_slash_doctor_use_same_read_only_checks(plugin, capsys):
     ctx, service = plugin
-    slash = ctx.commands["shadow"]("doctor")
-    setup, handler = ctx.cli["shadow"]
+    slash = ctx.commands["shadow-trial"]("doctor")
+    setup, handler = ctx.cli["shadow-trial"]
     parser = argparse.ArgumentParser()
     setup(parser)
     handler(parser.parse_args(["doctor"]))
@@ -199,36 +199,36 @@ def test_cli_and_slash_doctor_use_same_read_only_checks(plugin, capsys):
 
 def test_command_start_status_and_undo_go_through_registered_router(plugin):
     ctx, service = plugin
-    text = ctx.commands["shadow"]("switch test-1")
+    text = ctx.commands["shadow-trial"]("switch test-1")
     assert "Step 1 of 3" in text
     assert "new conversations" in text
     assert "Progress counts turns" in text
     assert "Shadow watches your turns only until this switch ends." in text
     assert "observed tool failures" in text
-    assert "step 1 of 3" in ctx.commands["shadow"]("status")
-    assert "switch is over" in ctx.commands["shadow"]("undo")
+    assert "step 1 of 3" in ctx.commands["shadow-trial"]("status")
+    assert "switch is over" in ctx.commands["shadow-trial"]("undo")
     assert service.engine.record.phase == "undone"
 
 
 def test_shared_router_can_register_trial_handlers_without_overwriting_switch(plugin):
     ctx, _ = plugin
     ctx.shadow_command_routes["try"] = lambda raw_args, **context: "fixture-trial"
-    assert ctx.commands["shadow"]("try new") == "fixture-trial"
-    assert "Models Hermes exposes with usable credentials:" in ctx.commands["shadow"]("doctor")
+    assert ctx.commands["shadow-trial"]("try new") == "fixture-trial"
+    assert "Models Hermes exposes with usable credentials:" in ctx.commands["shadow-trial"]("doctor")
 
 
 def test_notices_are_transition_only_and_status_uses_actual_model(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     key = turn(service.engine, 1)
     assert ctx.messages == []
-    assert f"Last: {short_name(NEW.model)}." in ctx.commands["shadow"]("status")
+    assert f"Last: {short_name(NEW.model)}." in ctx.commands["shadow-trial"]("status")
     ctx.hooks["pre_command"](command="retry", session_key=key["session_id"], args_raw="")
     assert ctx.messages == []
     service.engine.advance()
     ctx.hooks["on_session_start"](session_id="another", platform="desktop")
     assert ctx.messages == []
-    assert "Step 2 of 3" in ctx.commands["shadow"]("status")
+    assert "Step 2 of 3" in ctx.commands["shadow-trial"]("status")
 
 
 def test_terminal_notices_wrap_to_72_columns_and_use_copy_table(plugin):
@@ -272,20 +272,20 @@ def test_doctor_never_reconciles_pending_writes(plugin):
 
 def test_refused_transition_notice_is_kept_until_status_can_show_it(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     service.engine.advance()
     ctx.post_message = lambda text: SimpleNamespace(ok=False, pending=False, error="no_conversation")
     ctx.hooks["on_session_start"](session_id="another", platform="desktop")
     assert service.engine.record.notices
-    text = ctx.commands["shadow"]("status")
+    text = ctx.commands["shadow-trial"]("status")
     assert "Step 2 of 3" in text
     assert service.engine.record.notices == []
-    assert "Step 2 of 3" not in ctx.commands["shadow"]("status")
+    assert "Step 2 of 3" not in ctx.commands["shadow-trial"]("status")
 
 
 def test_classic_cli_transition_notice_prints_without_a_gateway(plugin, capsys):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     service.engine.advance()
     ctx.post_message = lambda text: SimpleNamespace(ok=False, pending=False, error="gateway_unavailable")
     ctx.hooks["on_session_start"](session_id="another", platform="cli")
@@ -299,7 +299,7 @@ def test_classic_cli_transition_notice_prints_without_a_gateway(plugin, capsys):
 
 def test_pending_gateway_delivery_does_not_duplicate_or_drop_later_notices(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     ctx.session_env.update(HERMES_SESSION_ID="another", HERMES_SESSION_KEY="telegram:another")
     service.engine.advance()
     handle = SimpleNamespace(ok=False, pending=True)
@@ -312,7 +312,7 @@ def test_pending_gateway_delivery_does_not_duplicate_or_drop_later_notices(plugi
     assert len(service.engine.record.notices) == 2
     handle.ok = True
     handle.pending = False
-    text = ctx.commands["shadow"]("status")
+    text = ctx.commands["shadow-trial"]("status")
     assert "Step 2 of 3" not in text
     assert "Step 3 of 3" in text
     assert service.engine.record.notices == []
@@ -321,8 +321,8 @@ def test_pending_gateway_delivery_does_not_duplicate_or_drop_later_notices(plugi
 def test_bare_shadow_shows_help_and_runs_read_only_setup_check(plugin):
     ctx, service = plugin
     service.config_reader = lambda: {}
-    text = ctx.commands["shadow"]("")
-    assert "/shadow status" in text
+    text = ctx.commands["shadow-trial"]("")
+    assert "/shadow-trial status" in text
     assert "hermes plugins enable shadow-trial" in text
     assert "allow_gateway_injection" not in text
     assert "Nothing changed." in text
@@ -331,7 +331,7 @@ def test_bare_shadow_shows_help_and_runs_read_only_setup_check(plugin):
 
 def test_stop_action_uses_stop_copy_and_leaves_switch_inactive(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     text = service.action("stop")
     assert "Switch stopped." in text
     assert "The test result is kept." in text
@@ -341,7 +341,7 @@ def test_stop_action_uses_stop_copy_and_leaves_switch_inactive(plugin):
 def test_switch_command_binds_an_existing_chat_without_another_start_hook(plugin):
     ctx, service = plugin
     ctx.hooks["on_session_start"](session_id="conversation", platform="cli")
-    ctx.commands["shadow"]("switch test-1", session_id="conversation", session_key="conversation", platform="cli")
+    ctx.commands["shadow-trial"]("switch test-1", session_id="conversation", session_key="conversation", platform="cli")
     service.engine.advance()
     service.engine.advance()
     ctx.hooks["pre_llm_call"](**identity(), platform="cli", model="old")
@@ -352,7 +352,7 @@ def test_switch_command_binds_an_existing_chat_without_another_start_hook(plugin
 def test_gateway_command_route_maps_to_its_actual_turn_session(plugin, command):
     ctx, service = plugin
     session = "conversation"
-    ctx.commands["shadow"]("switch test-1", session_id=session, session_key="telegram:route", platform="telegram")
+    ctx.commands["shadow-trial"]("switch test-1", session_id=session, session_key="telegram:route", platform="telegram")
     service.engine.advance()
     service.engine.advance()
     ctx.hooks["pre_llm_call"](**identity(), platform="telegram", model="old")
@@ -366,8 +366,8 @@ def test_gateway_command_route_maps_to_its_actual_turn_session(plugin, command):
 
 def test_status_can_bind_an_existing_chat_after_a_terminal_started_switch(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
-    ctx.commands["shadow"]("status", session_id="conversation", session_key="conversation", platform="cli")
+    ctx.commands["shadow-trial"]("switch test-1")
+    ctx.commands["shadow-trial"]("status", session_id="conversation", session_key="conversation", platform="cli")
     service.engine.advance()
     service.engine.advance()
     ctx.hooks["pre_llm_call"](**identity(), platform="cli", model="old")
@@ -376,7 +376,7 @@ def test_status_can_bind_an_existing_chat_after_a_terminal_started_switch(plugin
 
 def test_bound_turn_context_enrolls_an_existing_gateway_chat_and_maps_retry(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     service.engine.advance()
     service.engine.advance()
     ctx.session_env.update(HERMES_SESSION_ID="conversation", HERMES_SESSION_KEY="telegram:route")
@@ -393,7 +393,7 @@ def test_bound_turn_context_enrolls_an_existing_gateway_chat_and_maps_retry(plug
                                     {"user_message": "[shadow:replay]"}, {"platform": "subagent"}])
 def test_bound_session_context_cannot_admit_helpers_or_shadow_runs(plugin, changes):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     service.engine.advance()
     service.engine.advance()
     ctx.session_env.update(HERMES_SESSION_ID="conversation", HERMES_SESSION_KEY="telegram:route")
@@ -405,7 +405,7 @@ def test_bound_session_context_cannot_admit_helpers_or_shadow_runs(plugin, chang
 
 def test_mismatched_bound_session_cannot_enroll_an_unknown_chat(plugin):
     ctx, service = plugin
-    ctx.commands["shadow"]("switch test-1")
+    ctx.commands["shadow-trial"]("switch test-1")
     service.engine.advance()
     service.engine.advance()
     ctx.session_env.update(HERMES_SESSION_ID="different-conversation", HERMES_SESSION_KEY="telegram:route")

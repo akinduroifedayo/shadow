@@ -34,7 +34,7 @@ def test_verify_uses_disposable_read_scope_outside_profile(tmp_path, symlinked):
         return result
 
     plugin.setup_launch = launch
-    text = ctx.commands['shadow']('doctor --verify --yes')
+    text = ctx.commands['shadow-trial']('doctor --verify --yes')
     assert 'The setup check passed' in text
     assert workspaces and all(not path.exists() for path in workspaces)
     assert not (data / 'setup-workspace').exists()
@@ -54,5 +54,5 @@ def test_verify_removes_read_scope_on_launch_failure(tmp_path):
         raise OSError('synthetic launch failure')
 
     plugin.setup_launch = launch
-    assert 'did not pass' in ctx.commands['shadow']('doctor --verify --yes')
+    assert 'did not pass' in ctx.commands['shadow-trial']('doctor --verify --yes')
     assert workspaces and all(not path.exists() for path in workspaces)

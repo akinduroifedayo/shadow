@@ -255,6 +255,7 @@ def test_pair_command_uses_ctx_llm_without_a_parent_session(tmp_path, monkeypatc
     assert pair_probe.copy('doctor.pair_pass') in run_command(
         _service(ctx=live), terminal=True, yes=True, old_model=OLD, new_model=NEW)
     assert len(live.calls) == 2 and written[0]['probe_passed'] is True
+    assert (tmp_path / 'plugin-data' / 'shadow-trial' / 'pair-evidence.json').is_file()
 
 
 @pytest.mark.parametrize('profile,command', [('default', 'hermes'), ('work', 'hermes -p work')])
@@ -342,7 +343,7 @@ def test_trial_command_delegates_the_pair_check(tmp_path):
     register(ctx, plugin=plugin)
     seen = []
     ctx.shadow_verify_pair = lambda *, terminal, yes: seen.append((terminal, yes)) or 'pair result'
-    assert ctx.commands['shadow']('doctor --verify-pair --yes') == 'pair result'
+    assert ctx.commands['shadow-trial']('doctor --verify-pair --yes') == 'pair result'
     assert seen == [(False, True)]
 
 

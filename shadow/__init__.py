@@ -1,4 +1,6 @@
 def register(ctx):
+    from .common.storage_migration import migrate_legacy_storage
+    migrate_legacy_storage()
     from . import trial
     service = trial.register(ctx)
     switch_service = None

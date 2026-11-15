@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from ..common.discovery import ModelCatalog, ModelUnavailable, ProviderPresence, discover_models
 from ..common.copy import copy
+from ..common.commands import COMMAND_NAME, command_prefix
 from ..common.controller_stop import controller_stop_text
 from ..common.models import MAKER_NAMES, Model
 from ..common.storage import Store
@@ -126,7 +127,7 @@ class TrialPlugin:
             return False, False
 
     def parser(self, *, terminal=False):
-        parser = Parser(prog='hermes shadow' if terminal else '/shadow', add_help=True)
+        parser = Parser(prog=command_prefix(terminal), add_help=True)
         verbs = parser.add_subparsers(dest='verb')
         trial = verbs.add_parser('try', aliases=['compare'])
         trial.add_argument('model', nargs='?')
@@ -768,7 +769,7 @@ def register(ctx, plugin=None):
             parser.add_argument('shadow_args', nargs=argparse.REMAINDER)
         def cli_handler(args):
             print(dispatch(shlex.join(args.shadow_args), terminal=True))
-        ctx.register_command('shadow', dispatch, description=copy('trial.commands'), args_hint='<command>')
-        ctx.register_cli_command('shadow', copy('trial.commands'), cli_setup, cli_handler)
+        ctx.register_command(COMMAND_NAME, dispatch, description=copy('trial.commands'), args_hint='<command>')
+        ctx.register_cli_command(COMMAND_NAME, copy('trial.commands'), cli_setup, cli_handler)
         ctx.shadow_router_registered = True
     return service

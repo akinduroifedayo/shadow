@@ -142,7 +142,7 @@ def test_terminal_menu_enter_keeps_current_model(tmp_path):
     text = transcript.decode()
     assert sent and '3  Keep GPT-6.1 Sol' in text
     assert 'Kept GPT-6.1 Sol. Nothing changed.' in text
-    assert 'hermes shadow switch' not in text
+    assert 'hermes shadow-trial switch' not in text
 
 
 @pytest.mark.parametrize('counts,notice', [((15,11,4), True), ((6,19,5), True), ((4,20,6), False),
@@ -162,7 +162,7 @@ def test_unsupported_routes_only_explain_blocked_regular_switch(tmp_path, counts
         text = render_verdict(record, cli=cli)
         normalized = ' '.join(text.split())
         assert 'Switch gradually' not in text and 'switch gradually anyway' not in text
-        assert '/shadow switch' not in text and 'hermes shadow switch' not in text
+        assert '/shadow-trial switch' not in text and 'hermes shadow-trial switch' not in text
         explanation = {'api_mode': 'different request formats or endpoints', 'base_url': 'different request formats or endpoints',
                        'conflict': 'routes changed', 'missing': 'did not verify both model routes'}[issue]
         assert (explanation in normalized) == notice

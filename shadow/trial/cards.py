@@ -3,6 +3,7 @@ import textwrap
 from decimal import Decimal, ROUND_CEILING
 
 from ..common.copy import copy
+from ..common.commands import command_prefix
 from ..common.models import Model
 from ..common.controller_stop import controller_stop_text
 from .usage import stored_price
@@ -66,7 +67,7 @@ def run_message(record, surface):
 
 def render_start(record, *, cli=False, isolation_verified=False):
     current, trial = Model(**record['current']), Model(**record['trial'])
-    command = 'hermes shadow' if cli else '/shadow'
+    command = command_prefix(cli)
     providers = ', '.join(dict.fromkeys(m['provider'] for m in [record['trial'], record['current'], *record['judge']['models']]))
     fields = {'trying': trial.name, 'current': current.name, 'picked': record['picked'], 'total': record['total'], 'days': record['days'],
               'verb': 'compare' if record['intent'] == 'compare' else 'try'}
@@ -181,7 +182,7 @@ def render_verdict(record, *, cli=False, stats=False, interactive=False):
     level = '97.5' if data['second_look'] else '95'
     current, trial = Model(**record['current']), Model(**record['trial'])
     judge = Model(**record['judge']['models'][0])
-    command = 'hermes shadow' if cli else '/shadow'
+    command = command_prefix(cli)
     fields = {'trying': trial.name, 'current': current.name, 'judge': judge.name, 'pairs': data['pairs'], 'picked': record['picked'],
               'unusable': record['picked'] - data['pairs'], 'cap': record['cap'], 'provider': current.provider, 'agree': data['judge_agree'], 'varied': data['varied']}
     reason = data['cant_call_reason'] or data['word']

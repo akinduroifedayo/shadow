@@ -55,7 +55,7 @@ def _doctor(probe, home):
     for setting in SETTINGS:
         _STATE["config"] = _config(setting)
         before = deepcopy(_STATE["config"])
-        text = ctx.commands["shadow"]("doctor")
+        text = ctx.commands["shadow-trial"]("doctor")
         probe.expect(setting in text, f"doctor did not name {setting}")
         fix = "hermes plugins enable shadow-trial"
         probe.expect(fix in text, f"doctor did not give the fix line for {setting}")
@@ -64,7 +64,7 @@ def _doctor(probe, home):
                 label = "llm." + other.rsplit("allow_", 1)[1]
                 probe.expect(f"{label}: granted" in text, f"doctor did not report granted {other}")
         probe.expect(_STATE["config"] == before, f"doctor changed the config while reporting {setting}")
-        database = home / "plugin-data" / "shadow" / "state.db"
+        database = home / "plugin-data" / "shadow-trial" / "data.db"
         rows = 0
         if database.exists():
             connection = sqlite3.connect(database)

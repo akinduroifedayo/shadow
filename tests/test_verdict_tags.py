@@ -140,12 +140,12 @@ def test_start_commands_store_intent(tmp_path, capsys, terminal, verb, intent):
     ctx, plugin = service(tmp_path)
     ctx.answers = ['cancel']
     if terminal:
-        setup, handler = ctx.cli['shadow']
+        setup, handler = ctx.cli['shadow-trial']
         parser = argparse.ArgumentParser()
         setup(parser)
         text = handler(parser.parse_args([verb, TRIAL.model, '--judge', OUTSIDE.model]))
     else:
-        text = ctx.commands['shadow'](f'{verb} {TRIAL.model} --judge {OUTSIDE.model}')
+        text = ctx.commands['shadow-trial'](f'{verb} {TRIAL.model} --judge {OUTSIDE.model}')
     assert 'Try GPT-6 Luna' in (capsys.readouterr().out if terminal else text)
     record = plugin.store.get()
     assert record['intent'] == intent
@@ -156,9 +156,9 @@ def test_start_commands_store_intent(tmp_path, capsys, terminal, verb, intent):
 def test_compare_start_recovery_commands_keep_intent(tmp_path):
     record = card_record(tmp_path)
     record.update(intent='compare', picked=19)
-    assert 'hermes shadow compare ' in render_start(record, cli=True)
+    assert 'hermes shadow-trial compare ' in ' '.join(render_start(record, cli=True).split())
     record.update(picked=30, cap=.01)
-    assert 'hermes shadow compare ' in render_start(record, cli=True)
+    assert 'hermes shadow-trial compare ' in ' '.join(render_start(record, cli=True).split())
 
 
 def test_tag_copy_excludes_banned_words(tmp_path, monkeypatch):

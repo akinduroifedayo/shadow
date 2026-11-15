@@ -128,7 +128,7 @@ def test_cancel_preserves_unpriceable_request_notice(tmp_path, ending, late_requ
         unpriced_request()
     rpc = DesktopRpc(ProfileSource(plugin), load_copy())
     if ending.endswith('chat'):
-        text = ctx.commands['shadow']('cancel')
+        text = ctx.commands['shadow-trial']('cancel')
     elif ending.endswith('desktop'):
         response = rpc.act({'action': 'stop_test', 'test_id': record['id']})
         text = response['page']['stopped']['summary']

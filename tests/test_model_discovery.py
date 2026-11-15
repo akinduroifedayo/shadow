@@ -576,11 +576,11 @@ def test_demo_try_reaches_the_consent_card_after_both_stored_login_providers_rep
                          config_reader=lambda: {})
     register(ctx, plugin=plugin)
     command = 'try gpt-6.1-terra --judge claude-sonnet-4-5 --turns 20 --budget 5'
-    assert '[credentials_unknown]' in ctx.commands['shadow'](command)
+    assert '[credentials_unknown]' in ctx.commands['shadow-trial'](command)
     for provider in ('openai-codex', 'anthropic'):
         ctx.hook('post_api_request', session_id='main-' + provider, provider=provider,
                  api_request_id='completed-' + provider)
-    text = ctx.commands['shadow'](command)
+    text = ctx.commands['shadow-trial'](command)
     assert 'Try GPT-6.1 Terra against your GPT-6.1 Sol' in text
     assert 'Judged blind by Claude Sonnet 4.5, your pick.' in text
     assert copy('trial.isolation_required') in text
@@ -612,7 +612,7 @@ def test_fresh_cli_doctor_and_try_see_codex_login_without_warmup(codex_profile, 
                          config_reader=lambda: {})
     register(ctx, plugin=plugin)
     parser = argparse.ArgumentParser()
-    setup, handler = ctx.cli['shadow']
+    setup, handler = ctx.cli['shadow-trial']
     setup(parser)
     handler(parser.parse_args(['doctor']))
     doctor = capsys.readouterr().out

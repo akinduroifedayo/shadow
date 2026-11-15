@@ -34,14 +34,14 @@ def test_shared_commands_preserve_trial_handler_without_a_switch(plugin, verb):
     ctx, _ = plugin
     _, calls = register_after_trial(ctx, trial_active=True)
     context = {"session_id": "existing", "session_key": "chat", "platform": "desktop"}
-    assert ctx.commands["shadow"](verb, **context) == "trial " + verb
+    assert ctx.commands["shadow-trial"](verb, **context) == "trial " + verb
     assert calls == [(verb, context)]
 
 
 def test_shared_doctor_keeps_trial_and_switch_checks(plugin):
     ctx, _ = plugin
     _, calls = register_after_trial(ctx)
-    text = ctx.commands["shadow"]("doctor", terminal=True)
+    text = ctx.commands["shadow-trial"]("doctor", terminal=True)
     assert "trial doctor" in text
     assert "verified_gradual_pairs" in text
     assert calls == [("doctor", {"terminal": True})]
@@ -55,10 +55,10 @@ def test_active_switch_owns_status_and_undo(plugin, phase):
     if phase == "paused":
         with service.engine.store.transaction() as holder:
             holder[0].phase = "paused"
-    text = ctx.commands["shadow"]("status")
+    text = ctx.commands["shadow-trial"]("status")
     assert "trial status" not in text
     assert {"running": "step 1", "watch": "watching", "paused": "switch paused"}[phase] in text
-    assert f"back on {short_name(OLD.model)}" in ctx.commands["shadow"]("undo")
+    assert f"back on {short_name(OLD.model)}" in ctx.commands["shadow-trial"]("undo")
     assert service.engine.record.phase == "undone"
     assert calls == []
 
@@ -71,8 +71,8 @@ def test_completed_switch_still_has_status_and_undo_when_trial_is_idle(plugin):
         holder[0].phase = "done"
         holder[0].default_changed = True
         holder[0].completed_on = "2026-11-09"
-    assert "done Nov 9" in ctx.commands["shadow"]("status")
-    assert "default again" in ctx.commands["shadow"]("undo")
+    assert "done Nov 9" in ctx.commands["shadow-trial"]("status")
+    assert "default again" in ctx.commands["shadow-trial"]("undo")
     assert calls == []
 
 
@@ -82,7 +82,7 @@ def test_active_trial_owns_status_after_an_older_completed_switch(plugin):
     service.engine.start(Proposal("saved", OLD, NEW, "better"))
     with service.engine.store.transaction() as holder:
         holder[0].phase = "done"
-    assert ctx.commands["shadow"]("status") == "trial status"
+    assert ctx.commands["shadow-trial"]("status") == "trial status"
     assert calls == [("status", {})]
 
 
@@ -93,12 +93,12 @@ def test_registered_switch_refuses_while_trial_is_active(plugin, terminal):
     writes = []
     service.engine.set_default = writes.append
     service.proposal_lookup = lambda _: Proposal('saved', OLD, CROSS, 'better')
-    text = ctx.commands['shadow']('switch saved', terminal=terminal)
+    text = ctx.commands['shadow-trial']('switch saved', terminal=terminal)
     assert text == 'Test trial is still running.'
     assert service.engine.record is None
     assert writes == []
     ctx.shadow_trial.active_record = lambda: None
-    assert 'Your default model is now' in ctx.commands['shadow']('switch saved', terminal=terminal)
+    assert 'Your default model is now' in ctx.commands['shadow-trial']('switch saved', terminal=terminal)
     assert writes == [CROSS]
 
 
@@ -114,7 +114,7 @@ def test_combined_doctor_reports_shared_setup_only_once(plugin, missing_permissi
     service.config_reader = lambda: {} if missing_permissions else config()
     service.availability = lambda: (True, True)
     service.proposal_lookup = lambda _: Proposal('saved', OLD, NEW, 'better')
-    text = ctx.commands['shadow']('doctor')
+    text = ctx.commands['shadow-trial']('doctor')
     assert text.count(setup) == 1
     for key in REQUIRED_SETTINGS:
         assert text.count(f'hermes config set {key} true') == int(missing_permissions)

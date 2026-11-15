@@ -63,7 +63,7 @@ def drive() -> str:
         env.pop("ANTHROPIC_API_KEY", None)
         try:
             completed = subprocess.run(
-                [hermes, "-p", "shadow-demo", "shadow", "doctor"],
+                [hermes, "-p", "shadow-demo", "shadow-trial", "doctor"],
                 env=env,
                 cwd=str(home),
                 capture_output=True,
@@ -78,7 +78,7 @@ def drive() -> str:
             output = " ".join((completed.stdout or "").split())[:240]
             lines.append(f"doctor_exit={completed.returncode} doctor_out={output or '(empty)'}")
     else:
-        lines.append("hermes shadow doctor=not launched; need macOS and a hermes binary")
+        lines.append("hermes shadow-trial doctor=not launched; need macOS and a hermes binary")
     for number, text in CHECKS.items():
         lines.append(f"AC{number} checked: {text}; live proof={'doctor only' if drove else 'not run'}")
     report = "\n".join(lines)
