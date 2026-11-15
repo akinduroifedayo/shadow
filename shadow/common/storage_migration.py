@@ -117,7 +117,7 @@ def _copy_database_once(source, destination, required, distinctive):
                 statistics = copied.execute("SELECT name FROM sqlite_master WHERE type='table' "
                                             "AND name LIKE 'sqlite\\_stat%' ESCAPE '\\'").fetchall()
                 for (name,) in statistics:
-                    copied.execute(f'DROP TABLE IF EXISTS "{name}"')
+                    copied.execute('DROP TABLE IF EXISTS "' + name.replace('"', '""') + '"')
                 copied.commit()
                 copied.execute('VACUUM')
         if destination.name == 'switch.db' and not os.path.lexists(destination):
@@ -126,8 +126,8 @@ def _copy_database_once(source, destination, required, distinctive):
         try:
             os.link(temporary, destination)
         except FileExistsError:
-            logger.debug('Legacy Shadow %s was not published because %s already exists',
-                         destination.name, destination)
+            logger.debug('Legacy Shadow %s was not published because plugin-data/%s/%s already exists',
+                         destination.name, STORAGE_NAME, destination.name)
     finally:
         if temporary is not None:
             Path(temporary).unlink(missing_ok=True)
@@ -140,11 +140,14 @@ def _legacy_connection(source, destination_parent):
                 if os.path.lexists(str(source) + suffix)]
     if not sidecars:
         before = source.lstat()
-        with closing(sqlite3.connect(source.as_uri() + '?mode=ro&immutable=1', uri=True)) as legacy:
-            yield legacy
-        after = source.lstat()
-        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-            raise OSError('Legacy database source changed during copying')
+        try:
+            with closing(sqlite3.connect(source.as_uri() + '?mode=ro&immutable=1', uri=True)) as legacy:
+                yield legacy
+        finally:
+            # A torn read can fail quick_check; a changed source makes that failure retryable.
+            after = source.lstat()
+            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                raise OSError('Legacy database source changed during copying')
         return
     destination_parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(dir=destination_parent, prefix='.legacy-work-'))
@@ -152,6 +155,8 @@ def _legacy_connection(source, destination_parent):
         versions = {}
         for path in [source, *sidecars]:
             info = path.lstat()
+            if not stat.S_ISREG(info.st_mode):
+                raise _UnusableSource('Legacy database source is not a regular file')
             versions[path] = (info.st_size, info.st_mtime_ns)
         for path in versions:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)

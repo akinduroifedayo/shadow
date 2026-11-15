@@ -5,6 +5,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from types import SimpleNamespace
 
@@ -343,7 +344,16 @@ def test_copy_keeps_only_shadow_tables_and_their_indexes(locations, filename):
         connection.execute(f'CREATE TRIGGER foreign_trigger AFTER DELETE ON {table} '
                            'BEGIN DELETE FROM "foreign\"\"records"; END')
         connection.execute('ANALYZE')
+        connection.execute('CREATE TABLE legacy_stat (tbl, idx, neq, nlt, ndlt, sample)')
         connection.commit()
+        connection.execute('PRAGMA writable_schema=ON')
+        connection.execute("UPDATE sqlite_master SET name='sqlite_stat3', tbl_name='sqlite_stat3', "
+                           "sql='CREATE TABLE sqlite_stat3(tbl,idx,neq,nlt,ndlt,sample)' "
+                           "WHERE name='legacy_stat'")
+        connection.commit()
+    with closing(sqlite3.connect(legacy / filename)) as connection:
+        assert connection.execute("SELECT name FROM sqlite_master WHERE name='sqlite_stat3'").fetchone()
+        assert connection.execute('PRAGMA quick_check').fetchall() == [('ok',)]
     before = snapshot(legacy)
     migrate_legacy_storage()
     assert snapshot(legacy) == before
@@ -614,7 +624,7 @@ os._exit(0)
 
 
 @pytest.mark.parametrize('kind', ['symlink', 'directory', 'fifo'])
-def test_recovery_refuses_nonregular_sidecars_without_touching_legacy_files(locations, caplog, kind):
+def test_recovery_refuses_nonregular_sidecars_without_touching_legacy_files(locations, monkeypatch, caplog, kind):
     legacy, destination = locations
     trial_database(legacy / 'data.db')
     sidecar = legacy / 'data.db-wal'
@@ -627,7 +637,16 @@ def test_recovery_refuses_nonregular_sidecars_without_touching_legacy_files(loca
         os.mkfifo(sidecar)
     before = (legacy / 'data.db').read_bytes()
     listing = set(os.listdir(legacy))
+    mkdtemp = tempfile.mkdtemp
+    attempts = []
+
+    def counted_mkdtemp(*args, **kwargs):
+        attempts.append(kwargs.get('prefix'))
+        return mkdtemp(*args, **kwargs)
+
+    monkeypatch.setattr(tempfile, 'mkdtemp', counted_mkdtemp)
     migrate_legacy_storage()
+    assert attempts == ['.legacy-work-']
     assert (legacy / 'data.db').read_bytes() == before
     assert set(os.listdir(legacy)) == listing
     if kind == 'symlink':
@@ -736,7 +755,8 @@ def test_database_publication_never_overwrites_a_racing_destination(locations, m
         migrate_legacy_storage()
     assert snapshot(destination) == {'data.db': b'another writer won'}
     assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
-        (logging.DEBUG, f'Legacy Shadow data.db was not published because {destination / "data.db"} already exists')]
+        (logging.DEBUG, 'Legacy Shadow data.db was not published because '
+                        'plugin-data/shadow-trial/data.db already exists')]
 
 
 def test_failed_publication_retries_with_the_same_switch_identity(locations, monkeypatch, caplog):
@@ -775,3 +795,46 @@ def test_migration_follows_the_active_hermes_home(locations, tmp_path, monkeypat
     migrate_legacy_storage()
     assert (active_home / 'plugin-data' / 'shadow-trial' / 'data.db').is_file()
     assert not destination.exists()
+
+
+def test_torn_immutable_read_that_fails_quick_check_is_retried(locations, monkeypatch, caplog):
+    legacy, destination = locations
+    source = legacy / 'data.db'
+    trial_database(source)
+    before = snapshot(legacy)
+    connect = sqlite3.connect
+    lstat = Path.lstat
+    checks = []
+
+    class TornRead(sqlite3.Connection):
+        def execute(self, sql, *args):
+            if sql == 'PRAGMA quick_check':
+                checks.append(sql)
+                if len(checks) == 1:
+                    return super().execute("SELECT 'torn page'")
+            return super().execute(sql, *args)
+
+    def torn_connect(database, *args, **kwargs):
+        if str(database).startswith(source.as_uri()) and kwargs.get('uri'):
+            kwargs['factory'] = TornRead
+        return connect(database, *args, **kwargs)
+
+    calls = []
+
+    def changing_metadata(path, *args, **kwargs):
+        info = lstat(path, *args, **kwargs)
+        if path == source:
+            calls.append(path)
+            if len(calls) == 2:
+                return SimpleNamespace(st_size=info.st_size, st_mtime_ns=info.st_mtime_ns + 1)
+        return info
+
+    with monkeypatch.context() as torn:
+        torn.setattr(sqlite3, 'connect', torn_connect)
+        torn.setattr(Path, 'lstat', changing_metadata)
+        migrate_legacy_storage()
+    assert len(checks) == 2
+    with closing(connect(destination / 'data.db')) as copied:
+        assert copied.execute('SELECT id FROM trial_records').fetchall() == [('saved-trial',)]
+    assert snapshot(legacy) == before
+    assert caplog.messages == []
