@@ -49,6 +49,14 @@ def snapshot(directory):
     return {path.name: path.read_bytes() for path in directory.iterdir() if path.is_file()}
 
 
+def snapshot_metadata(directory):
+    metadata = {}
+    for path in directory.iterdir():
+        info = path.stat()
+        metadata[path.name] = (info.st_ino, info.st_size, info.st_mtime_ns)
+    return metadata
+
+
 def test_package_registration_copies_ours_before_opening_either_database(locations, monkeypatch):
     legacy, destination = locations
     trial_database(legacy / 'data.db')
@@ -334,7 +342,7 @@ def test_changed_source_is_not_published_or_modified(locations, monkeypatch, cap
     (legacy / 'data.db-wal').write_bytes(b'')
     (legacy / 'data.db-journal').write_bytes(b'')
     before = snapshot(legacy)
-    metadata = {path.name: path.stat() for path in legacy.iterdir()}
+    metadata = snapshot_metadata(legacy)
     target = legacy / ('data.db' + suffix)
     copyfileobj = storage_migration.shutil.copyfileobj
     lstat = Path.lstat
@@ -360,7 +368,7 @@ def test_changed_source_is_not_published_or_modified(locations, monkeypatch, cap
     assert copied_all
     assert set(os.listdir(destination)) == set()
     assert snapshot(legacy) == before
-    assert {path.name: path.stat() for path in legacy.iterdir()} == metadata
+    assert snapshot_metadata(legacy) == metadata
     assert caplog.messages == ['Legacy Shadow storage was not copied.']
     migrate_legacy_storage()
     assert set(os.listdir(destination)) == {'data.db'}
