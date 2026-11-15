@@ -5,11 +5,13 @@ import sqlite3
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from fixtures import FakeContext
 from shadow import register
+from shadow.common import storage_migration
 from shadow.common.storage import Store as TrialStore
 from shadow.common.storage_migration import migrate_legacy_storage
 from shadow.switch.domain import SwitchRecord
@@ -322,6 +324,47 @@ def test_recovery_failure_warns_and_removes_private_work_files(locations, monkey
     assert set(os.listdir(destination)) == set()
     assert snapshot(legacy) == before
     assert caplog.messages == ['Legacy Shadow storage was not copied.']
+
+
+@pytest.mark.parametrize('suffix', ['', '-wal', '-journal'])
+@pytest.mark.parametrize('changed', ['size', 'mtime_ns'])
+def test_changed_source_is_not_published_or_modified(locations, monkeypatch, caplog, suffix, changed):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    (legacy / 'data.db-wal').write_bytes(b'')
+    (legacy / 'data.db-journal').write_bytes(b'')
+    before = snapshot(legacy)
+    metadata = {path.name: path.stat() for path in legacy.iterdir()}
+    target = legacy / ('data.db' + suffix)
+    copyfileobj = storage_migration.shutil.copyfileobj
+    lstat = Path.lstat
+    copied_all = False
+
+    def copy_then_signal(source, copied):
+        nonlocal copied_all
+        copyfileobj(source, copied)
+        if Path(copied.name).name == 'data.db-journal':
+            copied_all = True
+
+    def changed_metadata(path, *args, **kwargs):
+        info = lstat(path, *args, **kwargs)
+        if path == target and copied_all:
+            return SimpleNamespace(st_size=info.st_size + (changed == 'size'),
+                                   st_mtime_ns=info.st_mtime_ns + (changed == 'mtime_ns'))
+        return info
+
+    with monkeypatch.context() as changing:
+        changing.setattr(storage_migration.shutil, 'copyfileobj', copy_then_signal)
+        changing.setattr(Path, 'lstat', changed_metadata)
+        migrate_legacy_storage()
+    assert copied_all
+    assert set(os.listdir(destination)) == set()
+    assert snapshot(legacy) == before
+    assert {path.name: path.stat() for path in legacy.iterdir()} == metadata
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+    migrate_legacy_storage()
+    assert set(os.listdir(destination)) == {'data.db'}
+    assert snapshot(legacy) == before
 
 
 def test_live_wal_database_is_recovered_without_changing_its_sidecars(locations):

@@ -6,6 +6,7 @@
 - Store trial records, switch records, identity salts, and pair evidence in `plugin-data/shadow-trial`.
 - On load, copy legacy `data.db` and `switch.db` from `plugin-data/shadow` only when their tables identify them as Shadow's and the destination is absent. Copy a regular 32-byte `switch.salt` only with a verified switch database. Preserve existing destinations and leave legacy files and evidence unchanged.
 - Recover legacy WAL and journal databases in private work directories without changing the shared legacy folder. Require SQLite integrity and ownership checks before copying. Log one fixed warning if recovery fails and continue loading.
+- Skip legacy database recovery copies if any source size or modification time changes during copying. Leave destinations absent so the next load retries.
 - Keep only known Shadow tables and their indexes in copied databases, then vacuum each copy to remove foreign data before publishing.
 - Remove stale migration database files, salt files, and recovery directories only from `plugin-data/shadow-trial` on load.
 

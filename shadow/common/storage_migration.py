@@ -112,13 +112,21 @@ def _legacy_connection(source, destination_parent):
     destination_parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(dir=destination_parent, prefix='.legacy-work-'))
     try:
+        versions = {}
         for path in [source, *sidecars]:
+            info = path.lstat()
+            versions[path] = (info.st_size, info.st_mtime_ns)
+        for path in versions:
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, 'rb') as stream:
                 if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
                     raise OSError('Legacy database source is not a regular file')
                 with (work / path.name).open('wb') as copied:
                     shutil.copyfileobj(stream, copied)
+        for path, before in versions.items():
+            info = path.lstat()
+            if before != (info.st_size, info.st_mtime_ns):
+                raise OSError('Legacy database source changed during copying')
         with closing(sqlite3.connect((work / source.name).as_uri() + '?mode=rw', uri=True)) as legacy:
             yield legacy
     finally:
