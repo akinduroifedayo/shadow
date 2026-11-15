@@ -82,6 +82,12 @@ def _copy_database(source, destination, required, distinctive):
                         continue
                     quoted = '"' + name.replace('"', '""') + '"'
                     copied.execute(f'DROP {kind.upper()} IF EXISTS {quoted}')
+                if 'sqlite_sequence' in tables:
+                    placeholders = ','.join('?' for _ in own_tables)
+                    copied.execute(f'DELETE FROM sqlite_sequence WHERE name NOT IN ({placeholders})',
+                                   tuple(own_tables))
+                copied.execute('DROP TABLE IF EXISTS sqlite_stat1')
+                copied.execute('DROP TABLE IF EXISTS sqlite_stat4')
                 copied.commit()
                 copied.execute('VACUUM')
             if destination.name == 'switch.db' and not os.path.lexists(destination):

@@ -208,11 +208,13 @@ def test_copy_keeps_only_shadow_tables_and_their_indexes(locations, filename):
     with closing(sqlite3.connect(legacy / filename)) as connection:
         connection.execute('CREATE TABLE "foreign\"\"records" (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT)')
         connection.execute('INSERT INTO "foreign\"\"records" (value) VALUES (?)', (foreign_value,))
+        connection.execute("INSERT INTO sqlite_sequence VALUES ('foreign_dropped', 42)")
         connection.execute('CREATE VIEW foreign_view AS SELECT * FROM "foreign\"\"records"')
         connection.execute('CREATE INDEX foreign_index ON "foreign\"\"records" (value)')
         connection.execute(f'CREATE INDEX own_index ON {table} (id)')
         connection.execute(f'CREATE TRIGGER foreign_trigger AFTER DELETE ON {table} '
                            'BEGIN DELETE FROM "foreign\"\"records"; END')
+        connection.execute('ANALYZE')
         connection.commit()
     before = snapshot(legacy)
     migrate_legacy_storage()
@@ -222,6 +224,10 @@ def test_copy_keeps_only_shadow_tables_and_their_indexes(locations, filename):
         schema = {row[0] for row in connection.execute('SELECT name FROM sqlite_master')
                   if not row[0].startswith('sqlite_')}
         assert schema == expected
+        if connection.execute("SELECT name FROM sqlite_master WHERE name='sqlite_sequence'").fetchone():
+            assert connection.execute('SELECT name FROM sqlite_sequence').fetchall() == []
+        assert connection.execute("SELECT name FROM sqlite_master WHERE name IN "
+                                  "('sqlite_stat1', 'sqlite_stat4')").fetchall() == []
         assert connection.execute(f'SELECT count(*) FROM {table}').fetchone() == (1,)
         assert connection.execute('PRAGMA quick_check').fetchall() == [('ok',)]
     assert b'foreign-plugin-private-payload-' not in (destination / filename).read_bytes()
