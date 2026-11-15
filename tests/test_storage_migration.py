@@ -124,6 +124,42 @@ def test_missing_legacy_folder_creates_nothing(locations, caplog):
     assert caplog.messages == []
 
 
+def test_stale_migration_files_are_swept_only_in_destination(locations, caplog):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    for name in ['.legacy-db-old', '.legacy-salt-old', '.legacy-work-old']:
+        (legacy / name).write_bytes(b'keep shared files')
+    destination.mkdir()
+    (destination / '.legacy-db-old').write_bytes(b'partial database')
+    (destination / '.legacy-db-old-wal').write_bytes(b'partial WAL')
+    (destination / '.legacy-salt-old').write_bytes(b'partial salt')
+    work = destination / '.legacy-work-old'
+    work.mkdir()
+    (work / 'data.db').write_bytes(b'partial recovery')
+    (destination / '.legacy-work-link').symlink_to(legacy, target_is_directory=True)
+    (destination / '.legacy-db-link').symlink_to(legacy / 'data.db')
+    (destination / 'unrelated.txt').write_bytes(b'keep destination file')
+    before = snapshot(legacy)
+    migrate_legacy_storage()
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+    assert set(os.listdir(destination)) == {'data.db', 'unrelated.txt'}
+    assert (destination / 'unrelated.txt').read_bytes() == b'keep destination file'
+    with closing(sqlite3.connect(destination / 'data.db')) as connection:
+        assert connection.execute('SELECT id FROM trial_records').fetchall() == [('saved-trial',)]
+    assert caplog.messages == []
+
+
+def test_stale_files_are_swept_even_without_legacy_databases(locations, caplog):
+    legacy, destination = locations
+    destination.mkdir(parents=True)
+    (destination / '.legacy-db-old').write_bytes(b'partial database')
+    migrate_legacy_storage()
+    assert set(os.listdir(destination)) == set()
+    assert not legacy.exists()
+    assert caplog.messages == []
+
+
 def test_second_run_leaves_both_locations_unchanged(locations):
     legacy, destination = locations
     trial_database(legacy / 'data.db')

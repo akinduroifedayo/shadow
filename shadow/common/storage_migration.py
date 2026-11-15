@@ -23,6 +23,10 @@ def migrate_legacy_storage():
     try:
         from hermes_constants import get_hermes_home
         root = Path(get_hermes_home()).absolute() / 'plugin-data'
+        try:
+            _sweep_temporary_files(root / STORAGE_NAME)
+        except OSError:
+            failed = True
         for filename, (required, distinctive) in _LEGACY_TABLES.items():
             try:
                 _copy_database(root / 'shadow' / filename, root / STORAGE_NAME / filename,
@@ -33,6 +37,18 @@ def migrate_legacy_storage():
         failed = True
     if failed:
         logger.warning('Legacy Shadow storage was not copied.')
+
+
+def _sweep_temporary_files(directory):
+    if not directory.exists():
+        return
+    for path in directory.iterdir():
+        if not path.name.startswith(('.legacy-db-', '.legacy-salt-', '.legacy-work-')):
+            continue
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def _copy_database(source, destination, required, distinctive):
