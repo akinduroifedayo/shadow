@@ -1,7 +1,8 @@
-from contextlib import closing
+from contextlib import closing, contextmanager
 import logging
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 import stat
 import tempfile
@@ -37,10 +38,9 @@ def migrate_legacy_storage():
 def _copy_database(source, destination, required, distinctive):
     if os.path.lexists(destination) or not source.is_file() or source.is_symlink():
         return
-    # Immutable reads prevent sidecar writes but cannot recover a WAL or journal.
-    if any(os.path.lexists(str(source) + suffix) for suffix in ('-wal', '-journal')):
-        return
-    with closing(sqlite3.connect(source.as_uri() + '?mode=ro&immutable=1', uri=True)) as legacy:
+    with _legacy_connection(source, destination.parent) as legacy:
+        if legacy.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
+            raise sqlite3.DatabaseError('Legacy database failed quick_check')
         tables = {row[0] for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not required <= tables or not distinctive & tables:
             return
@@ -50,6 +50,7 @@ def _copy_database(source, destination, required, distinctive):
         try:
             with closing(sqlite3.connect(temporary)) as copied:
                 legacy.backup(copied)
+                copied.execute('PRAGMA journal_mode=DELETE')
             if destination.name == 'switch.db' and not os.path.lexists(destination):
                 # Publish the salt first so a crash cannot expose a re-keyed switch database.
                 _copy_salt(source.with_suffix('.salt'), destination.with_suffix('.salt'))
@@ -59,6 +60,30 @@ def _copy_database(source, destination, required, distinctive):
                 pass
         finally:
             Path(temporary).unlink(missing_ok=True)
+
+
+@contextmanager
+def _legacy_connection(source, destination_parent):
+    sidecars = [Path(str(source) + suffix) for suffix in ('-wal', '-journal')
+                if os.path.lexists(str(source) + suffix)]
+    if not sidecars:
+        with closing(sqlite3.connect(source.as_uri() + '?mode=ro&immutable=1', uri=True)) as legacy:
+            yield legacy
+        return
+    destination_parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(dir=destination_parent, prefix='.legacy-work-'))
+    try:
+        for path in [source, *sidecars]:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise OSError('Legacy database source is not a regular file')
+                with (work / path.name).open('wb') as copied:
+                    shutil.copyfileobj(stream, copied)
+        with closing(sqlite3.connect((work / source.name).as_uri() + '?mode=rw', uri=True)) as legacy:
+            yield legacy
+    finally:
+        shutil.rmtree(work)
 
 
 def _copy_salt(source, destination):

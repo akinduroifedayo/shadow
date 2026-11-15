@@ -2,6 +2,7 @@ from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
 import sys
 
 import pytest
@@ -25,6 +26,7 @@ def locations(tmp_path, monkeypatch):
 def trial_database(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     store = TrialStore(path)
+    store._db().execute('PRAGMA journal_mode=WAL')
     store.save({'id': 'saved-trial', 'created_at': 1, 'state': 'finished'})
     store.close()
 
@@ -32,6 +34,7 @@ def trial_database(path):
 def switch_database(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     store = SwitchStore(path=path)
+    store._open().execute('PRAGMA journal_mode=WAL')
     with store.transaction(create=True) as holder:
         holder[0] = SwitchRecord('saved-switch', 'saved-trial', OLD, NEW, 'gradual')
     identity = store.identity('conversation')
@@ -113,11 +116,12 @@ def test_each_database_copies_independently_without_replacing_existing_files(loc
     assert snapshot(legacy) == before
 
 
-def test_missing_legacy_folder_creates_nothing(locations):
+def test_missing_legacy_folder_creates_nothing(locations, caplog):
     legacy, destination = locations
     migrate_legacy_storage()
     assert not legacy.exists()
     assert not destination.parent.exists()
+    assert caplog.messages == []
 
 
 def test_second_run_leaves_both_locations_unchanged(locations):
@@ -196,21 +200,32 @@ def test_checkpointed_wal_database_never_creates_legacy_sidecars(locations):
     before = snapshot(legacy)
     migrate_legacy_storage()
     assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
     assert (destination / 'data.db').is_file()
+    assert set(os.listdir(destination)) == {'data.db'}
 
 
 @pytest.mark.parametrize('suffix', ['-wal', '-journal'])
-def test_pending_wal_or_journal_is_skipped_without_writing_legacy_files(locations, suffix):
+def test_recovery_failure_warns_and_removes_private_work_files(locations, monkeypatch, caplog, suffix):
     legacy, destination = locations
     trial_database(legacy / 'data.db')
     (legacy / ('data.db' + suffix)).write_bytes(b'pending changes')
     before = snapshot(legacy)
+    connect = sqlite3.connect
+
+    def fail_recovery(database, *args, **kwargs):
+        if '.legacy-work-' in str(database):
+            raise sqlite3.DatabaseError('private recovery failure')
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', fail_recovery)
     migrate_legacy_storage()
-    assert not destination.exists()
+    assert set(os.listdir(destination)) == set()
     assert snapshot(legacy) == before
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
 
 
-def test_live_wal_database_is_skipped_without_changing_its_sidecars(locations):
+def test_live_wal_database_is_recovered_without_changing_its_sidecars(locations):
     legacy, destination = locations
     trial_database(legacy / 'data.db')
     with closing(sqlite3.connect(legacy / 'data.db')) as connection:
@@ -219,8 +234,94 @@ def test_live_wal_database_is_skipped_without_changing_its_sidecars(locations):
         connection.commit()
         before = snapshot(legacy)
         migrate_legacy_storage()
-        assert not destination.exists()
         assert snapshot(legacy) == before
+        assert set(os.listdir(legacy)) == set(before)
+        assert set(os.listdir(destination)) == {'data.db'}
+        with closing(sqlite3.connect(destination / 'data.db')) as copied:
+            assert copied.execute('SELECT id FROM trial_cancellations').fetchall() == [('pending',)]
+            assert copied.execute('PRAGMA quick_check').fetchall() == [('ok',)]
+
+
+@pytest.mark.parametrize('mode', ['WAL', 'DELETE'])
+def test_leftover_wal_or_hot_journal_recovers_only_committed_rows(locations, mode):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    subprocess.run([sys.executable, '-c', '''
+import os
+import sqlite3
+import sys
+connection = sqlite3.connect(sys.argv[1])
+connection.execute('PRAGMA journal_mode=' + sys.argv[2])
+connection.execute('PRAGMA cache_size=1')
+connection.execute("INSERT INTO trial_cancellations VALUES ('committed')")
+connection.commit()
+if sys.argv[2] == 'DELETE':
+    connection.execute("DELETE FROM trial_cancellations")
+    connection.executemany('INSERT INTO trial_cancellations VALUES (?)',
+                           [(str(i) + 'x' * 4096,) for i in range(100)])
+os._exit(0)
+''', str(legacy / 'data.db'), mode], check=True)
+    suffix = '-wal' if mode == 'WAL' else '-journal'
+    assert (legacy / ('data.db' + suffix)).stat().st_size > 0
+    before = snapshot(legacy)
+    migrate_legacy_storage()
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+    assert set(os.listdir(destination)) == {'data.db'}
+    with closing(sqlite3.connect(destination / 'data.db')) as copied:
+        assert copied.execute('SELECT id FROM trial_cancellations').fetchall() == [('committed',)]
+        assert copied.execute('SELECT id FROM trial_records').fetchall() == [('saved-trial',)]
+        assert copied.execute('PRAGMA quick_check').fetchall() == [('ok',)]
+
+
+@pytest.mark.parametrize('kind', ['symlink', 'directory', 'fifo'])
+def test_recovery_refuses_nonregular_sidecars_without_touching_legacy_files(locations, caplog, kind):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    sidecar = legacy / 'data.db-wal'
+    if kind == 'symlink':
+        (legacy / 'unrelated').write_bytes(b'other plugin data')
+        sidecar.symlink_to(legacy / 'unrelated')
+    elif kind == 'directory':
+        sidecar.mkdir()
+    else:
+        os.mkfifo(sidecar)
+    before = (legacy / 'data.db').read_bytes()
+    listing = set(os.listdir(legacy))
+    migrate_legacy_storage()
+    assert (legacy / 'data.db').read_bytes() == before
+    assert set(os.listdir(legacy)) == listing
+    if kind == 'symlink':
+        assert sidecar.is_symlink()
+        assert (legacy / 'unrelated').read_bytes() == b'other plugin data'
+    assert set(os.listdir(destination)) == set()
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
+
+
+def test_recovered_database_must_pass_quick_check_before_publication(locations, monkeypatch, caplog):
+    legacy, destination = locations
+    trial_database(legacy / 'data.db')
+    switch_database(legacy / 'switch.db')
+    (legacy / 'data.db-wal').write_bytes(b'leftover')
+    before = snapshot(legacy)
+    connect = sqlite3.connect
+
+    class FailedCheck(sqlite3.Connection):
+        def execute(self, sql, *args):
+            if sql == 'PRAGMA quick_check':
+                return super().execute("SELECT 'ok' UNION ALL SELECT 'damaged'")
+            return super().execute(sql, *args)
+
+    def failed_check(database, *args, **kwargs):
+        if '.legacy-work-' in str(database):
+            kwargs['factory'] = FailedCheck
+        return connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, 'connect', failed_check)
+    migrate_legacy_storage()
+    assert set(os.listdir(destination)) == {'switch.db', 'switch.salt'}
+    assert snapshot(legacy) == before
+    assert caplog.messages == ['Legacy Shadow storage was not copied.']
 
 
 def test_corrupt_trial_does_not_block_copying_our_switch_database(locations, caplog):
