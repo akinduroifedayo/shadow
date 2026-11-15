@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Register `/shadow-trial` and `hermes shadow-trial` so commands coexist with the other catalog plugin.
+- Use `shadow-trial` as the Hermes Desktop page id and `/shadow-trial` as its route, matching the install folder.
 - Store trial records, switch records, identity salts, and pair evidence in `plugin-data/shadow-trial`.
 - On load, copy legacy `data.db` and `switch.db` from `plugin-data/shadow` only when their tables identify them as Shadow's and the destination is absent. Copy a regular 32-byte `switch.salt` only with a verified switch database. Preserve existing destinations and leave legacy files and evidence unchanged.
 - Recover legacy WAL and journal databases in private work directories without changing the shared legacy folder. Require SQLite integrity and ownership checks before copying. Log one fixed warning if recovery fails and continue loading.
