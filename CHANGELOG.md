@@ -10,6 +10,7 @@
 - Retry failed legacy database copies up to three times during the same load, including source size or modification time changes. If copying still fails, log a fixed warning and start with empty trial storage for failed copies. Leave `plugin-data/shadow` unchanged.
 - Keep only known Shadow tables and their indexes in copied databases, then vacuum each copy to remove foreign data before publishing.
 - Remove stale migration database files, salt files, and recovery directories only from `plugin-data/shadow-trial` on load.
+- Fix `hermes shadow-trial results <id> --stats` failing with "No module named 'shadow'" in a real install. Runtime modules now import each other relatively.
 
 ## 0.1.0 - 2026-11-11
 
