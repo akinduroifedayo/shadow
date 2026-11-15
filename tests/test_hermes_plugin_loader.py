@@ -1,6 +1,7 @@
 """Load the plugin the way Hermes does, under a name other than ``shadow``."""
 import importlib
 import importlib.util
+import json
 import shutil
 import sqlite3
 import sys
@@ -8,6 +9,8 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+
+from test_cards import card_record
 
 # hermes-agent 7f3ac61295. User plugins are scanned with an empty prefix
 # (hermes_cli/plugins_discovery.py:210-212). The manifest key is then the
@@ -123,6 +126,10 @@ def test_hermes_loader_alias_registers_shadow_trial_command(tmp_path, monkeypatc
     assert module_name == "hermes_plugins.shadow_trial"
     assert plugin_dir.name != "shadow"
 
+    # A saved record as the store hands it back: plain JSON, no live objects.
+    (tmp_path / "stats").mkdir()
+    stats_record = json.loads(json.dumps(card_record(tmp_path / "stats"), default=vars))
+
     saved_path = list(sys.path)
     saved_shadow = _snapshot("shadow")
     saved_namespace = _snapshot(_NS_PARENT)
@@ -146,6 +153,11 @@ def test_hermes_loader_alias_registers_shadow_trial_command(tmp_path, monkeypatc
         switch_copy = importlib.import_module(f"{module_name}.shadow.switch.copy")
         assert desktop.display_name("gpt-6.1-sol").startswith("GPT-")
         assert switch_copy.short_name("gpt-6.1-sol").startswith("GPT-")
+        # `hermes shadow-trial results <id> --stats` renders the stats block,
+        # which must resolve its imports inside the aliased package.
+        cards = importlib.import_module(f"{module_name}.shadow.trial.cards")
+        stats_text = cards.render_verdict(stats_record, cli=True, stats=True)
+        assert "Net win rate" in stats_text and "Sign test" in stats_text
         assert "shadow" not in sys.modules
     finally:
         sys.path[:] = saved_path

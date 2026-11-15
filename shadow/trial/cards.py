@@ -139,7 +139,7 @@ def receipt_columns(record):
 
 
 def _signed(value):
-    from shadow.trial.verdict import format_signed_pct
+    from .verdict import format_signed_pct
     return format_signed_pct(value)
 
 
