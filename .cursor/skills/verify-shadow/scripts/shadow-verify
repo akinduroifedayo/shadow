@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+# Drive Shadow (the shadow-trial Hermes plugin) for verification, isolated from every real profile.
+# Run `shadow-verify help` for the command list. See ../SKILL.md for the recipes.
+set -euo pipefail
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$SKILL_DIR/../../.." && pwd)"
+HERMES_BIN="${SHADOW_HERMES_BIN:-$(command -v hermes || true)}"
+PY="${SHADOW_VERIFY_PYTHON:-python3}"
+EVIDENCE_ROOT="${SHADOW_VERIFY_EVIDENCE:-$REPO/runs/verify-shadow}"
+
+die() { echo "shadow-verify: $*" >&2; exit 2; }
+need_run() {
+  [ -n "${RUN_ID:-}" ] || die "RUN_ID is not set. Use the value 'launch' printed: export RUN_ID=..."
+  EVIDENCE="$EVIDENCE_ROOT/$RUN_ID"
+  [ -f "$EVIDENCE/run.env" ] || die "no run.env for RUN_ID=$RUN_ID under $EVIDENCE_ROOT"
+  # shellcheck disable=SC1091
+  . "$EVIDENCE/run.env"
+}
+save_var() { printf '%s=%q\n' "$1" "$2" >> "$EVIDENCE/run.env"; }
+next_seq() { local n; n=$(find "$EVIDENCE" -maxdepth 2 -name '[0-9][0-9][0-9]-*' 2>/dev/null | wc -l); printf '%03d' $((n + 1)); }
+
+# Every Hermes call runs with an empty environment plus these names, so no provider key or
+# real profile path from the caller's shell leaks in. HOME points at scratch, so host-wide
+# credential files (Codex, Claude Code, gh) are invisible to Hermes.
+hermes_env() {
+  env -i PATH="$PATH" LANG="${LANG:-C.UTF-8}" TERM="${TERM:-xterm-256color}" \
+    HOME="$SCRATCH/user-home" HERMES_HOME="$SCRATCH/hermes-home" \
+    XDG_CACHE_HOME="${SHADOW_VERIFY_CACHE:-$SCRATCH/cache}" NO_COLOR=1 "$@"
+}
+tmx() { tmux -L "shadow-verify-$RUN_ID" "$@"; }
+
+cmd_launch() {
+  local overlay=0 grant=1 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --working-tree) overlay=1 ;;
+      --no-grant) grant=0 ;;
+      *) die "unknown launch option $arg (use --working-tree, --no-grant)" ;;
+    esac
+  done
+  [ -n "$HERMES_BIN" ] && [ -x "$HERMES_BIN" ] || die "hermes not found. Set SHADOW_HERMES_BIN to a Hermes 0.23.1+ executable."
+  command -v git >/dev/null || die "git is required (Hermes installs plugins with git)"
+  command -v tmux >/dev/null || die "tmux is required (the capability grant needs a PTY)"
+  RUN_ID="${RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+  EVIDENCE="$EVIDENCE_ROOT/$RUN_ID"
+  [ -e "$EVIDENCE/run.env" ] && die "RUN_ID $RUN_ID already launched; pick a new one or run cleanup"
+  mkdir -p "$EVIDENCE/cli" "$EVIDENCE/db" "$EVIDENCE/desktop"
+  SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/shadow-verify-$RUN_ID.XXXXXX")"
+  mkdir -p "$SCRATCH/hermes-home" "$SCRATCH/user-home"
+  : > "$EVIDENCE/run.env"
+  save_var RUN_ID "$RUN_ID"; save_var SCRATCH "$SCRATCH"; save_var REPO "$REPO"; save_var HERMES_BIN "$HERMES_BIN"
+  # Answer the first-run telemetry offer up front so no prompt blocks a non-interactive run.
+  printf 'telemetry:\n  shared_metrics:\n    enabled: false\n    send: false\n    offer_version: 2\n' > "$SCRATCH/hermes-home/config.yaml"
+  local head; head="$(git -C "$REPO" rev-parse HEAD)"
+  {
+    echo "\$ hermes --version"; hermes_env "$HERMES_BIN" --version 2>&1 || true
+    echo; echo "\$ hermes plugins install file://<repo> --enable   (repo HEAD $head)"
+    hermes_env "$HERMES_BIN" plugins install "file://$REPO" --enable </dev/null 2>&1
+    echo "exit=$?"
+  } > "$EVIDENCE/launch.txt" 2>&1 || true
+  local plugin="$SCRATCH/hermes-home/plugins/shadow-trial"
+  [ -f "$plugin/plugin.yaml" ] || { cat "$EVIDENCE/launch.txt"; die "install did not create plugins/shadow-trial (see $EVIDENCE/launch.txt)"; }
+  save_var INSTALLED_REV "$(git -C "$plugin" rev-parse HEAD 2>/dev/null || echo unknown)"
+  if [ "$overlay" = 1 ]; then
+    # Verification scaffolding: copy uncommitted tracked and untracked files over the clone.
+    (cd "$REPO" && git ls-files -co --exclude-standard -z | tar --null -T - -cf -) | tar -C "$plugin" -xf -
+    save_var OVERLAY "working-tree"
+    echo "overlaid working tree onto the installed clone" >> "$EVIDENCE/launch.txt"
+  else
+    save_var OVERLAY "none"
+  fi
+  save_var GRANTED "$grant"
+  if [ "$grant" = 0 ]; then
+    { echo; echo "capability consent left ungranted (--no-grant)"; } >> "$EVIDENCE/launch.txt"
+    echo "READY shadow-trial installed in an isolated HERMES_HOME, capabilities NOT granted"
+    echo "export RUN_ID=$RUN_ID"; echo "evidence: $EVIDENCE"
+    return 0
+  fi
+  # Capability consent is interactive by design; answer it in a PTY like a user would.
+  tmx new-session -d -s grant -x 200 -y 50 \
+    "$(printf '%q ' env -i PATH="$PATH" HOME="$SCRATCH/user-home" HERMES_HOME="$SCRATCH/hermes-home" TERM=xterm-256color NO_COLOR=1 "$HERMES_BIN" plugins enable shadow-trial); echo GRANT-EXIT=\$?; sleep 30"
+  local i
+  for i in $(seq 1 60); do tmx capture-pane -p -t grant | grep -q 'Grant these capabilities?' && break; sleep 0.5; done
+  tmx send-keys -t grant y Enter
+  for i in $(seq 1 60); do tmx capture-pane -p -t grant | grep -q 'GRANT-EXIT=' && break; sleep 0.5; done
+  { echo; echo "\$ hermes plugins enable shadow-trial   (PTY, answered y)"; tmx capture-pane -p -t grant | sed '/^\s*$/d'; } >> "$EVIDENCE/launch.txt"
+  tmx kill-session -t grant 2>/dev/null || true
+  { echo; echo "\$ hermes plugins list --plain --no-bundled"; hermes_env "$HERMES_BIN" plugins list --plain --no-bundled </dev/null 2>&1 || true; } >> "$EVIDENCE/launch.txt"
+  grep -q 'allow_model_override: true' "$SCRATCH/hermes-home/config.yaml" || die "capabilities were not granted (see $EVIDENCE/launch.txt)"
+  echo "READY shadow-trial installed in an isolated HERMES_HOME"
+  echo "export RUN_ID=$RUN_ID"
+  echo "evidence: $EVIDENCE"
+}
+
+cmd_doctor() {
+  need_run
+  local out="$EVIDENCE/doctor.txt" home="$SCRATCH/hermes-home"
+  check() { if eval "$2"; then echo "PASS $1"; else echo "FAIL $1"; fi; }
+  {
+    echo "run $RUN_ID at $(date '+%Y-%m-%d %H:%M:%S %Z')"
+    check "scratch HERMES_HOME exists" '[ -d "$home" ]'
+    check "HERMES_HOME is not the real ~/.hermes" '[ "$(cd "$home" && pwd -P)" != "$(cd ~ && pwd -P)/.hermes" ]'
+    check "hermes executable" '[ -x "$HERMES_BIN" ]'
+    echo "INFO $(hermes_env "$HERMES_BIN" --version 2>/dev/null | head -1)"
+    check "plugin installed as shadow-trial" 'grep -q "^name: shadow-trial$" "$home/plugins/shadow-trial/plugin.yaml"'
+    check "plugin enabled in config" 'grep -A2 "^  enabled:" "$home/config.yaml" | grep -q "shadow-trial"'
+    if [ "${GRANTED:-1}" = 1 ]; then
+      check "capabilities granted" 'grep -q "allow_provider_override: true" "$home/config.yaml" && grep -q "allow_model_override: true" "$home/config.yaml"'
+    else
+      check "capabilities left ungranted as launched (--no-grant)" '! grep -q "allow_model_override: true" "$home/config.yaml"'
+    fi
+    local head; head="$(git -C "$REPO" rev-parse HEAD)"
+    if [ "$INSTALLED_REV" = "$head" ]; then echo "PASS installed revision matches repo HEAD ${head:0:7}"
+    else echo "WARN installed revision ${INSTALLED_REV:0:7} differs from repo HEAD ${head:0:7}; relaunch to test HEAD"; fi
+    if [ -n "$(git -C "$REPO" status --porcelain -- . ':!runs' ':!.cursor/skills/verify-shadow')" ] && [ "$OVERLAY" != "working-tree" ]; then
+      echo "WARN repo has uncommitted changes the install does not include; relaunch with launch --working-tree"
+    fi
+    if [ -n "${DESKTOP_PID:-}" ]; then
+      check "desktop dev server pid $DESKTOP_PID alive" 'kill -0 "$DESKTOP_PID" 2>/dev/null'
+      check "desktop port $DESKTOP_PORT serves the harness" 'curl -fsS -o /dev/null "http://127.0.0.1:$DESKTOP_PORT/harness.html"'
+    fi
+    if [ -f "$home/plugin-data/shadow-trial/data.db" ]; then echo "INFO trial storage exists (the plugin has loaded at least once)"
+    else echo "INFO trial storage not created yet (no shadow-trial command has run)"; fi
+  } > "$out"
+  cat "$out"
+  ! grep -q '^FAIL' "$out"
+}
+
+cmd_cli() {
+  need_run
+  local slug="${1:?usage: cli <slug> -- <shadow-trial args...>}"; shift
+  [ "${1:-}" = "--" ] && shift
+  local file="$EVIDENCE/cli/$(next_seq)-$slug.txt" code=0 output
+  output="$(hermes_env "$HERMES_BIN" shadow-trial "$@" </dev/null 2>&1)" || code=$?
+  # Write the transcript before printing it, so a reader piping into head cannot truncate the proof.
+  { printf '$ hermes shadow-trial'; [ $# -gt 0 ] && printf ' %q' "$@"; printf '\n%s\nexit=%s\n' "$output" "$code"; } > "$file"
+  cat "$file"
+  echo "saved: $file"
+}
+
+cmd_pty() {
+  need_run
+  local verb="${1:?usage: pty start|send|wait|capture|stop <name> ...}" name="${2:?missing session name}"; shift 2
+  case "$verb" in
+    start)
+      [ "${1:-}" = "--" ] && shift
+      tmx new-session -d -s "$name" -x 160 -y 60 \
+        "$(printf '%q ' env -i PATH="$PATH" HOME="$SCRATCH/user-home" HERMES_HOME="$SCRATCH/hermes-home" TERM=xterm-256color NO_COLOR=1 "$HERMES_BIN" shadow-trial "$@"); echo PTY-EXIT=\$?; sleep 600"
+      echo "started pty '$name': hermes shadow-trial $*" ;;
+    send) tmx send-keys -t "$name" "$@" ;;
+    wait)
+      local pattern="${1:?missing regex}" i
+      for i in $(seq 1 "${2:-60}"); do tmx capture-pane -p -t "$name" -S - | grep -Eq "$pattern" && { echo "matched: $pattern"; return 0; }; sleep 0.5; done
+      tmx capture-pane -p -t "$name" -S - | sed '/^\s*$/d' | tail -20; die "timed out waiting for /$pattern/" ;;
+    capture)
+      local slug="${1:-$name}" file
+      file="$EVIDENCE/cli/$(next_seq)-pty-$slug.txt"
+      tmx capture-pane -p -t "$name" -S - | sed '/^\s*$/d' > "$file"; cat "$file"; echo "saved: $file" ;;
+    stop) tmx kill-session -t "$name" 2>/dev/null || true ;;
+    *) die "unknown pty verb $verb" ;;
+  esac
+}
+
+cmd_seed() {
+  need_run
+  local fixture="${1:?usage: seed <fixture> [--legacy]   e.g. seed result-worse}" legacy="${2:-}" dir
+  if [ "$legacy" = "--legacy" ]; then
+    [ -e "$SCRATCH/hermes-home/plugin-data/shadow-trial/data.db" ] && die "plugin-data/shadow-trial/data.db already exists, so the legacy copy would be skipped. Seed --legacy right after launch."
+    dir="$SCRATCH/hermes-home/plugin-data/shadow"
+  else
+    dir="$SCRATCH/hermes-home/plugin-data/shadow-trial"
+  fi
+  mkdir -p "$dir"
+  # Seed data only: saves a desktop fixture's saved tests through the plugin's own Store, as if
+  # a finished test had been written. HERMES_HOME is unset so nothing else in Hermes is touched.
+  local seedfile; seedfile="$EVIDENCE/db/$(next_seq)-seed-$fixture${legacy:+-legacy}.txt"
+  env -u HERMES_HOME "$PY" - "$REPO" "$fixture" "$dir/data.db" > "$seedfile" <<'PY'
+import json, sys, time
+from pathlib import Path
+repo, fixture, db = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+sys.path.insert(0, str(repo))
+from shadow.common.storage import Store, parse_trial_record
+tests = json.loads((repo / 'desktop' / 'fixtures' / f'{fixture}.json').read_text())['tests']
+if not tests:
+    sys.exit(f'fixture {fixture} has no saved tests')
+store = Store(db)
+for offset, raw in enumerate(tests):
+    record = parse_trial_record(raw)
+    # The CLI builds Model(provider, model, plan, reachable); drop the fixture's display-only keys.
+    for model in (record['current'], record['trial'], *record['judge']['models']):
+        for key in list(model):
+            if key not in {'provider', 'model', 'plan', 'reachable'}:
+                del model[key]
+    record['created_at'] = time.time() - offset  # fresh, so the 30-day prune keeps it
+    store.save(record)
+    print(f"seeded {record['id']} state={record['state']} intent={record['intent']} turns={len(record['turns'])} into {Path(db).parent.name}/data.db")
+store.close()
+PY
+  cat "$seedfile"
+}
+
+cmd_db() {
+  need_run
+  local slug="${1:?usage: db <slug> <sql> [--legacy]}" sql="${2:?missing sql}" name="shadow-trial"
+  [ "${3:-}" = "--legacy" ] && name="shadow"
+  local db="$SCRATCH/hermes-home/plugin-data/$name/data.db" file="$EVIDENCE/db/$(next_seq)-$slug.txt"
+  [ -f "$db" ] || { echo "plugin-data/$name/data.db does not exist" > "$file"; cat "$file"; return 1; }
+  echo "plugin-data/$name/data.db (read-only): $sql" > "$file"
+  "$PY" - "$db" "$sql" >> "$file" <<'PY'
+import sqlite3, sys
+con = sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True)
+for row in con.execute(sys.argv[2]):
+    print(' | '.join(map(str, row)))
+PY
+  cat "$file"
+  echo "saved: $file"
+}
+
+cmd_files() {
+  need_run
+  local slug="${1:-files}" file
+  file="$EVIDENCE/db/$(next_seq)-$slug.txt"
+  ( cd "$SCRATCH/hermes-home" && find plugin-data -type f 2>/dev/null | sort | while read -r f; do
+      printf '%s  %s  %s bytes\n' "$(sha256sum "$f" | cut -c1-16)" "$f" "$(stat -c %s "$f")"; done ) > "$file"
+  cat "$file"
+  echo "saved: $file"
+}
+
+cmd_desktop() {
+  need_run
+  case "${1:?usage: desktop up|shoot|down}" in
+    up)
+      [ -n "${DESKTOP_PID:-}" ] && kill -0 "$DESKTOP_PID" 2>/dev/null && die "desktop server already up on port $DESKTOP_PORT"
+      local port; port="$("$PY" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+      # setsid gives the server its own process group (pgid == pid), so cleanup can stop exactly it.
+      (cd "$REPO"; setsid "$PY" desktop/dev/serve.py "$port" > "$EVIDENCE/desktop/serve.log" 2>&1 < /dev/null & echo $! > "$SCRATCH/desktop.pid")
+      local pid; pid="$(cat "$SCRATCH/desktop.pid")"
+      save_var DESKTOP_PID "$pid"; save_var DESKTOP_PORT "$port"
+      local i; for i in $(seq 1 50); do curl -fsS -o /dev/null "http://127.0.0.1:$port/harness.html" 2>/dev/null && break; sleep 0.2; done
+      curl -fsS -o /dev/null "http://127.0.0.1:$port/harness.html" || die "desktop server did not answer (see $EVIDENCE/desktop/serve.log)"
+      echo "READY desktop harness http://127.0.0.1:$port/harness.html?s=result (pid $pid)" ;;
+    shoot)
+      [ -n "${DESKTOP_PORT:-}" ] || die "run 'desktop up' first"
+      local code=0
+      (cd "$REPO" && node desktop/dev/shoot.mjs "$EVIDENCE/desktop" "http://127.0.0.1:$DESKTOP_PORT") > "$EVIDENCE/desktop/shoot.txt" 2>&1 || code=$?
+      echo "exit=$code" >> "$EVIDENCE/desktop/shoot.txt"
+      tail -5 "$EVIDENCE/desktop/shoot.txt"; echo "screenshots: $EVIDENCE/desktop"; return $code ;;
+    down)
+      [ -n "${DESKTOP_PID:-}" ] && kill -- "-$DESKTOP_PID" 2>/dev/null || true
+      echo "desktop server stopped" ;;
+    *) die "unknown desktop verb" ;;
+  esac
+}
+
+cmd_cleanup() {
+  need_run
+  local log="$EVIDENCE/cleanup.txt"
+  {
+    echo "cleanup $RUN_ID at $(date '+%Y-%m-%d %H:%M:%S %Z')"
+    if [ -n "${DESKTOP_PID:-}" ] && kill -0 "$DESKTOP_PID" 2>/dev/null; then kill -- "-$DESKTOP_PID" && echo "killed desktop server process group $DESKTOP_PID"; fi
+    tmx kill-server 2>/dev/null && echo "killed tmux server shadow-verify-$RUN_ID" || true
+    # Hermes can spawn helpers (an idle-exit gateway) under our scratch HERMES_HOME. Kill only
+    # processes whose environment names this run's scratch directory: those are ours.
+    local p
+    for p in $(pgrep -u "$(id -u)" . 2>/dev/null); do
+      [ "$p" = "$$" ] && continue
+      if { tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | grep -qx "HERMES_HOME=$SCRATCH/hermes-home"; then
+        local what; what="$({ tr '\0' ' ' < "/proc/$p/cmdline"; } 2>/dev/null | cut -c1-80)"
+        kill "$p" 2>/dev/null && echo "killed $p (${what:-exited})"
+      fi
+    done
+    case "$SCRATCH" in */shadow-verify-"$RUN_ID".*) rm -rf "$SCRATCH" && echo "removed scratch $SCRATCH" ;; *) echo "refused to remove unexpected scratch path $SCRATCH" ;; esac
+  } | tee "$log"
+  echo "evidence kept: $EVIDENCE"
+  find "$EVIDENCE" -type f | sort | sed "s|^$EVIDENCE/|  |"
+}
+
+case "${1:-help}" in
+  launch) shift; cmd_launch "$@" ;;
+  doctor) shift; cmd_doctor "$@" ;;
+  cli) shift; cmd_cli "$@" ;;
+  pty) shift; cmd_pty "$@" ;;
+  seed) shift; cmd_seed "$@" ;;
+  db) shift; cmd_db "$@" ;;
+  files) shift; cmd_files "$@" ;;
+  desktop) shift; cmd_desktop "$@" ;;
+  cleanup) shift; cmd_cleanup "$@" ;;
+  *) sed -n '2,3p' "$0"; cat <<'USAGE'
+  launch [--working-tree] [--no-grant]
+                               install the repo into a scratch HERMES_HOME and grant consent in a PTY;
+                               prints export RUN_ID=...
+  doctor                       read-only: is this run's instance worth driving?
+  cli <slug> -- <args...>      run `hermes shadow-trial <args>` non-interactively; saves a transcript
+  pty start <name> -- <args>   run `hermes shadow-trial <args>` in a tmux PTY (interactive menus)
+  pty send <name> <keys...>    tmux send-keys, e.g. pty send r 2 Enter
+  pty wait <name> <regex> [n]  wait up to n/2 seconds for output matching regex
+  pty capture <name> [slug]    save the PTY screen as evidence
+  pty stop <name>
+  seed <fixture> [--legacy]    save a desktop/fixtures/<fixture>.json saved test into trial storage
+  db <slug> <sql> [--legacy]   read-only SQL against plugin-data/shadow-trial (or shadow) data.db
+  files [slug]                 list plugin-data files with sha256 prefixes
+  desktop up|shoot|down        desktop dev harness: serve.py on a free port, shoot.mjs over CDP
+  cleanup                      stop what this run started, delete scratch, keep evidence
+USAGE
+  ;;
+esac
