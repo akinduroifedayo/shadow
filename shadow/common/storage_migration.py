@@ -19,6 +19,18 @@ _LEGACY_TABLES = {
 }
 
 
+class _PermanentCopyError(Exception):
+    """A legacy source that will fail the same way on every attempt."""
+
+
+class _UnusableSource(_PermanentCopyError, OSError):
+    pass
+
+
+class _FailedQuickCheck(_PermanentCopyError, sqlite3.DatabaseError):
+    pass
+
+
 def migrate_legacy_storage():
     failed = False
     try:
@@ -62,6 +74,8 @@ def _copy_database(source, destination, required, distinctive):
         try:
             _copy_database_once(source, destination, required, distinctive)
             return
+        except _PermanentCopyError:
+            raise
         except (OSError, sqlite3.Error):
             if attempt == 2:
                 raise
@@ -74,7 +88,7 @@ def _copy_database_once(source, destination, required, distinctive):
     try:
         with _legacy_connection(source, destination.parent) as legacy:
             if legacy.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
-                raise sqlite3.DatabaseError('Legacy database failed quick_check')
+                raise _FailedQuickCheck('Legacy database failed quick_check')
             tables = {row[0] for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not required <= tables or not distinctive & tables:
                 return
@@ -100,8 +114,10 @@ def _copy_database_once(source, destination, required, distinctive):
                     placeholders = ','.join('?' for _ in own_tables)
                     copied.execute(f'DELETE FROM sqlite_sequence WHERE name NOT IN ({placeholders})',
                                    tuple(own_tables))
-                copied.execute('DROP TABLE IF EXISTS sqlite_stat1')
-                copied.execute('DROP TABLE IF EXISTS sqlite_stat4')
+                statistics = copied.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                            "AND name LIKE 'sqlite\\_stat%' ESCAPE '\\'").fetchall()
+                for (name,) in statistics:
+                    copied.execute(f'DROP TABLE IF EXISTS "{name}"')
                 copied.commit()
                 copied.execute('VACUUM')
         if destination.name == 'switch.db' and not os.path.lexists(destination):
@@ -110,7 +126,8 @@ def _copy_database_once(source, destination, required, distinctive):
         try:
             os.link(temporary, destination)
         except FileExistsError:
-            pass
+            logger.debug('Legacy Shadow %s was not published because %s already exists',
+                         destination.name, destination)
     finally:
         if temporary is not None:
             Path(temporary).unlink(missing_ok=True)
@@ -140,7 +157,7 @@ def _legacy_connection(source, destination_parent):
             fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, 'rb') as stream:
                 if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                    raise OSError('Legacy database source is not a regular file')
+                    raise _UnusableSource('Legacy database source is not a regular file')
                 with (work / path.name).open('wb') as copied:
                     shutil.copyfileobj(stream, copied)
         for path, before in versions.items():

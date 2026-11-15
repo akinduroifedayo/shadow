@@ -1,4 +1,5 @@
 from contextlib import closing
+import logging
 import os
 from pathlib import Path
 import sqlite3
@@ -353,8 +354,8 @@ def test_copy_keeps_only_shadow_tables_and_their_indexes(locations, filename):
         assert schema == expected
         if connection.execute("SELECT name FROM sqlite_master WHERE name='sqlite_sequence'").fetchone():
             assert connection.execute('SELECT name FROM sqlite_sequence').fetchall() == []
-        assert connection.execute("SELECT name FROM sqlite_master WHERE name IN "
-                                  "('sqlite_stat1', 'sqlite_stat4')").fetchall() == []
+        assert connection.execute("SELECT name FROM sqlite_master "
+                                  "WHERE name LIKE 'sqlite\\_stat%' ESCAPE '\\'").fetchall() == []
         assert connection.execute(f'SELECT count(*) FROM {table}').fetchone() == (1,)
         assert connection.execute('PRAGMA quick_check').fetchall() == [('ok',)]
     assert b'foreign-plugin-private-payload-' not in (destination / filename).read_bytes()
@@ -651,13 +652,17 @@ def test_recovered_database_must_pass_quick_check_before_publication(locations, 
                 return super().execute("SELECT 'ok' UNION ALL SELECT 'damaged'")
             return super().execute(sql, *args)
 
+    attempts = []
+
     def failed_check(database, *args, **kwargs):
         if '.legacy-work-' in str(database):
+            attempts.append(database)
             kwargs['factory'] = FailedCheck
         return connect(database, *args, **kwargs)
 
     monkeypatch.setattr(sqlite3, 'connect', failed_check)
     migrate_legacy_storage()
+    assert len(attempts) == 1
     assert set(os.listdir(destination)) == {'switch.db', 'switch.salt'}
     assert snapshot(legacy) == before
     assert caplog.messages == ['Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
@@ -717,7 +722,7 @@ def test_corrupt_sources_log_one_fixed_message_and_allow_registration(locations,
     assert not destination.exists()
 
 
-def test_database_publication_never_overwrites_a_racing_destination(locations, monkeypatch):
+def test_database_publication_never_overwrites_a_racing_destination(locations, monkeypatch, caplog):
     legacy, destination = locations
     trial_database(legacy / 'data.db')
     link = os.link
@@ -727,8 +732,11 @@ def test_database_publication_never_overwrites_a_racing_destination(locations, m
         link(source, target)
 
     monkeypatch.setattr(os, 'link', racing_link)
-    migrate_legacy_storage()
+    with caplog.at_level(logging.DEBUG, logger='shadow.common.storage_migration'):
+        migrate_legacy_storage()
     assert snapshot(destination) == {'data.db': b'another writer won'}
+    assert [(record.levelno, record.getMessage()) for record in caplog.records] == [
+        (logging.DEBUG, f'Legacy Shadow data.db was not published because {destination / "data.db"} already exists')]
 
 
 def test_failed_publication_retries_with_the_same_switch_identity(locations, monkeypatch, caplog):
