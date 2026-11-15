@@ -134,6 +134,40 @@ def test_second_run_leaves_both_locations_unchanged(locations):
     assert (snapshot(legacy), snapshot(destination)) == before
 
 
+@pytest.mark.parametrize('filename', ['data.db', 'switch.db'])
+def test_copy_keeps_only_shadow_tables_and_their_indexes(locations, filename):
+    legacy, destination = locations
+    table = 'trial_records' if filename == 'data.db' else 'shadow_switch_records'
+    if filename == 'data.db':
+        trial_database(legacy / filename)
+        expected = {'trial_records', 'trial_cancellations', 'trial_controllers',
+                    'trial_second_looks', 'trial_replay_children', 'own_index'}
+    else:
+        switch_database(legacy / filename)
+        expected = {'shadow_switch_records', 'own_index'}
+    foreign_value = 'foreign-plugin-private-payload-' * 1000
+    with closing(sqlite3.connect(legacy / filename)) as connection:
+        connection.execute('CREATE TABLE "foreign\"\"records" (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT)')
+        connection.execute('INSERT INTO "foreign\"\"records" (value) VALUES (?)', (foreign_value,))
+        connection.execute('CREATE VIEW foreign_view AS SELECT * FROM "foreign\"\"records"')
+        connection.execute('CREATE INDEX foreign_index ON "foreign\"\"records" (value)')
+        connection.execute(f'CREATE INDEX own_index ON {table} (id)')
+        connection.execute(f'CREATE TRIGGER foreign_trigger AFTER DELETE ON {table} '
+                           'BEGIN DELETE FROM "foreign\"\"records"; END')
+        connection.commit()
+    before = snapshot(legacy)
+    migrate_legacy_storage()
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+    with closing(sqlite3.connect(destination / filename)) as connection:
+        schema = {row[0] for row in connection.execute('SELECT name FROM sqlite_master')
+                  if not row[0].startswith('sqlite_')}
+        assert schema == expected
+        assert connection.execute(f'SELECT count(*) FROM {table}').fetchone() == (1,)
+        assert connection.execute('PRAGMA quick_check').fetchall() == [('ok',)]
+    assert b'foreign-plugin-private-payload-' not in (destination / filename).read_bytes()
+
+
 @pytest.mark.parametrize('salt', [None, b'', b's' * 31, b's' * 32, b's' * 33])
 def test_salt_requires_a_verified_switch_database_and_exact_size(locations, salt):
     legacy, destination = locations

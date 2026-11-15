@@ -51,6 +51,20 @@ def _copy_database(source, destination, required, distinctive):
             with closing(sqlite3.connect(temporary)) as copied:
                 legacy.backup(copied)
                 copied.execute('PRAGMA journal_mode=DELETE')
+                own_tables = required | distinctive
+                objects = copied.execute("SELECT type, name, tbl_name FROM sqlite_master "
+                                         "ORDER BY type='table'").fetchall()
+                for kind, name, table in objects:
+                    if name.startswith('sqlite_'):
+                        continue
+                    if kind == 'table' and name in own_tables:
+                        continue
+                    if kind == 'index' and table in own_tables:
+                        continue
+                    quoted = '"' + name.replace('"', '""') + '"'
+                    copied.execute(f'DROP {kind.upper()} IF EXISTS {quoted}')
+                copied.commit()
+                copied.execute('VACUUM')
             if destination.name == 'switch.db' and not os.path.lexists(destination):
                 # Publish the salt first so a crash cannot expose a re-keyed switch database.
                 _copy_salt(source.with_suffix('.salt'), destination.with_suffix('.salt'))
