@@ -30,6 +30,13 @@ def test_desktop_wire_prefix_matches_manifest(filename):
     assert prefixes == {PREFIX}
 
 
+def test_desktop_page_identity_matches_manifest():
+    source = (ROOT / 'desktop/plugin.js').read_text()
+    assert re.findall(r"^  id: '([^']+)',$", source, re.M) == [MANIFEST_NAME]
+    assert re.findall(r"^const PATH = '([^']+)'$", source, re.M) == [f'/{MANIFEST_NAME}']
+    assert re.findall(r"style\.dataset\.plugin = '([^']+)'", source) == [MANIFEST_NAME]
+
+
 def test_hermes_wire_identity_matches_manifest(tmp_path):
     reference = require_hermes_reference().resolve()
     script = textwrap.dedent('''\
