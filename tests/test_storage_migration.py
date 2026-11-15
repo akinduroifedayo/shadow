@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -138,12 +139,19 @@ def test_stale_migration_files_are_swept_only_in_destination(locations, caplog):
     (work / 'data.db').write_bytes(b'partial recovery')
     (destination / '.legacy-work-link').symlink_to(legacy, target_is_directory=True)
     (destination / '.legacy-db-link').symlink_to(legacy / 'data.db')
+    old = time.time() - 7200
+    for path in destination.iterdir():
+        os.utime(path, (old, old), follow_symlinks=False)
+    fresh = destination / '.legacy-work-fresh'
+    fresh.mkdir()
+    (fresh / 'data.db').write_bytes(b'active recovery')
     (destination / 'unrelated.txt').write_bytes(b'keep destination file')
     before = snapshot(legacy)
     migrate_legacy_storage()
     assert snapshot(legacy) == before
     assert set(os.listdir(legacy)) == set(before)
-    assert set(os.listdir(destination)) == {'data.db', 'unrelated.txt'}
+    assert set(os.listdir(destination)) == {'data.db', 'unrelated.txt', '.legacy-work-fresh'}
+    assert (fresh / 'data.db').read_bytes() == b'active recovery'
     assert (destination / 'unrelated.txt').read_bytes() == b'keep destination file'
     with closing(sqlite3.connect(destination / 'data.db')) as connection:
         assert connection.execute('SELECT id FROM trial_records').fetchall() == [('saved-trial',)]
@@ -154,9 +162,24 @@ def test_stale_files_are_swept_even_without_legacy_databases(locations, caplog):
     legacy, destination = locations
     destination.mkdir(parents=True)
     (destination / '.legacy-db-old').write_bytes(b'partial database')
+    old = time.time() - 7200
+    os.utime(destination / '.legacy-db-old', (old, old))
     migrate_legacy_storage()
     assert set(os.listdir(destination)) == set()
     assert not legacy.exists()
+    assert caplog.messages == []
+
+
+def test_sweep_does_not_follow_a_destination_folder_symlink(locations, caplog):
+    legacy, destination = locations
+    legacy.mkdir(parents=True)
+    path = legacy / '.legacy-db-old'
+    path.write_bytes(b'keep shared file')
+    old = time.time() - 7200
+    os.utime(path, (old, old))
+    destination.symlink_to(legacy, target_is_directory=True)
+    migrate_legacy_storage()
+    assert snapshot(legacy) == {'.legacy-db-old': b'keep shared file'}
     assert caplog.messages == []
 
 

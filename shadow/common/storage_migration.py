@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import stat
 import tempfile
+import time
 
 from .storage import STORAGE_NAME
 
@@ -40,10 +41,12 @@ def migrate_legacy_storage():
 
 
 def _sweep_temporary_files(directory):
-    if not directory.exists():
+    if not directory.exists() or directory.is_symlink():
         return
     for path in directory.iterdir():
         if not path.name.startswith(('.legacy-db-', '.legacy-salt-', '.legacy-work-')):
+            continue
+        if time.time() - path.lstat().st_mtime < 3600:
             continue
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path)
