@@ -96,7 +96,6 @@ from typing import Any, Callable, Mapping, Protocol
 from .common.controller_stop import controller_stop_text
 from .common.commands import command_prefix
 
-PLUGIN_ID = 'shadow'
 EVENT_CHANGED = 'page.changed'
 ACTIONS = ('start', 'see', 'stop_test', 'get_result', 'delete_test', 'keep', 'switch', 'switch_all', 'run_more',
            'anyway', 'undo', 'move_on', 'resume', 'stop_switch', 'switch_again', 'stay', 'doctor')

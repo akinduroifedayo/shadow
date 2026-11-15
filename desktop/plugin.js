@@ -1,7 +1,7 @@
 import { host, ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS } from '@hermes/plugin-sdk'
 import { createElement as h, Fragment, useEffect, useState } from 'react'
 
-const PATH = '/shadow'
+const PATH = '/shadow-trial'
 const EVENT = 'plugin.shadow-trial.page.changed'
 const ACTIVE_POLL_MS = 4000
 const IDLE_POLL_MS = 30000
@@ -936,11 +936,11 @@ const CSS = `
 `
 
 export default {
-  id: 'shadow',
+  id: 'shadow-trial',
   name: 'Shadow',
   register(ctx) {
     const style = document.createElement('style')
-    style.dataset.plugin = 'shadow'
+    style.dataset.plugin = 'shadow-trial'
     style.textContent = CSS
     document.head.appendChild(style)
     ctx.onDispose(() => style.remove())

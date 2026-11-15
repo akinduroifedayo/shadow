@@ -468,7 +468,7 @@ test('the sidebar remains available when the first backend response fails', asyn
   h.register()
   assert.equal(h.contributions.get('nav')?.data.label, 'Shadow')
   await tick()
-  assert.equal(h.contributions.get('nav')?.data.path, '/shadow')
+  assert.equal(h.contributions.get('nav')?.data.path, '/shadow-trial')
   const page = h.render('ProfilePage', { generation: h.store.generation, page: h.store.page, error: h.store.error })
   assert.equal(find(page, node => node.props.className === 'err').children[0], 'Backend unavailable')
   h.dispose()
