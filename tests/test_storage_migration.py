@@ -501,6 +501,68 @@ def test_changed_source_is_retried_without_modifying_legacy(
     assert snapshot(legacy) == before
 
 
+@pytest.mark.parametrize('filename', ['data.db', 'switch.db'])
+@pytest.mark.parametrize('changed', ['size', 'mtime_ns'])
+@pytest.mark.parametrize('failures', [1, 3])
+def test_changed_immutable_source_is_checked_before_publication(
+        locations, monkeypatch, caplog, filename, changed, failures):
+    legacy, destination = locations
+    source = legacy / filename
+    if filename == 'data.db':
+        trial_database(source)
+    else:
+        switch_database(source)
+    before = snapshot(legacy)
+    metadata = snapshot_metadata(legacy)
+    connect = sqlite3.connect
+    lstat = Path.lstat
+    backups = 0
+    copied = False
+
+    class ChangingSource(sqlite3.Connection):
+        def backup(self, target):
+            nonlocal backups, copied
+            super().backup(target)
+            backups += 1
+            copied = True
+
+    def changing_connect(database, *args, **kwargs):
+        if str(database).startswith(source.as_uri()) and kwargs.get('uri'):
+            kwargs['factory'] = ChangingSource
+        return connect(database, *args, **kwargs)
+
+    def changed_metadata(path, *args, **kwargs):
+        nonlocal copied
+        info = lstat(path, *args, **kwargs)
+        if path == source and copied:
+            copied = False
+            if backups <= failures:
+                return SimpleNamespace(st_size=info.st_size + (changed == 'size'),
+                                       st_mtime_ns=info.st_mtime_ns + (changed == 'mtime_ns'))
+        return info
+
+    with monkeypatch.context() as changing:
+        changing.setattr(sqlite3, 'connect', changing_connect)
+        changing.setattr(Path, 'lstat', changed_metadata)
+        migrate_legacy_storage()
+    assert backups == (2 if failures == 1 else 3)
+    assert snapshot(legacy) == before
+    assert set(os.listdir(legacy)) == set(before)
+    assert snapshot_metadata(legacy) == metadata
+    assert not list(destination.glob('.legacy-*'))
+    if failures == 1:
+        table = 'trial_records' if filename == 'data.db' else 'shadow_switch_records'
+        with closing(connect(destination / filename)) as connection:
+            assert connection.execute(f'SELECT count(*) FROM {table}').fetchone() == (1,)
+        assert caplog.messages == []
+    else:
+        assert set(os.listdir(destination)) == set()
+        assert caplog.messages == [
+            'Legacy Shadow storage was not copied. Shadow starts with empty trial storage '
+            'for failed copies and leaves plugin-data/shadow unchanged.'
+        ]
+
+
 def test_live_wal_database_is_recovered_without_changing_its_sidecars(locations):
     legacy, destination = locations
     trial_database(legacy / 'data.db')

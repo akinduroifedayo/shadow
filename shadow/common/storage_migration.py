@@ -70,16 +70,17 @@ def _copy_database(source, destination, required, distinctive):
 def _copy_database_once(source, destination, required, distinctive):
     if os.path.lexists(destination) or not source.is_file() or source.is_symlink():
         return
-    with _legacy_connection(source, destination.parent) as legacy:
-        if legacy.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
-            raise sqlite3.DatabaseError('Legacy database failed quick_check')
-        tables = {row[0] for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if not required <= tables or not distinctive & tables:
-            return
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(dir=destination.parent, prefix='.legacy-db-')
-        os.close(fd)
-        try:
+    temporary = None
+    try:
+        with _legacy_connection(source, destination.parent) as legacy:
+            if legacy.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
+                raise sqlite3.DatabaseError('Legacy database failed quick_check')
+            tables = {row[0] for row in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if not required <= tables or not distinctive & tables:
+                return
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(dir=destination.parent, prefix='.legacy-db-')
+            os.close(fd)
             with closing(sqlite3.connect(temporary)) as copied:
                 legacy.backup(copied)
                 copied.execute('PRAGMA journal_mode=DELETE')
@@ -103,24 +104,30 @@ def _copy_database_once(source, destination, required, distinctive):
                 copied.execute('DROP TABLE IF EXISTS sqlite_stat4')
                 copied.commit()
                 copied.execute('VACUUM')
-            if destination.name == 'switch.db' and not os.path.lexists(destination):
-                # Publish the salt first so a crash cannot expose a re-keyed switch database.
-                _copy_salt(source.with_suffix('.salt'), destination.with_suffix('.salt'))
-            try:
-                os.link(temporary, destination)
-            except FileExistsError:
-                pass
-        finally:
+        if destination.name == 'switch.db' and not os.path.lexists(destination):
+            # Publish the salt first so a crash cannot expose a re-keyed switch database.
+            _copy_salt(source.with_suffix('.salt'), destination.with_suffix('.salt'))
+        try:
+            os.link(temporary, destination)
+        except FileExistsError:
+            pass
+    finally:
+        if temporary is not None:
             Path(temporary).unlink(missing_ok=True)
 
 
 @contextmanager
 def _legacy_connection(source, destination_parent):
+    # Coarse mtimes can miss same-size rewrites within one timestamp tick.
     sidecars = [Path(str(source) + suffix) for suffix in ('-wal', '-journal')
                 if os.path.lexists(str(source) + suffix)]
     if not sidecars:
+        before = source.lstat()
         with closing(sqlite3.connect(source.as_uri() + '?mode=ro&immutable=1', uri=True)) as legacy:
             yield legacy
+        after = source.lstat()
+        if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            raise OSError('Legacy database source changed during copying')
         return
     destination_parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(dir=destination_parent, prefix='.legacy-work-'))
