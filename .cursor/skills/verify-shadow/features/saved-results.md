@@ -35,7 +35,7 @@ Preconditions:
 
 ## Gotchas
 
-- Known failure at 810b34d: `results <id> --stats` crashes in a real Hermes install with `ModuleNotFoundError: No module named 'shadow'` from `shadow/trial/cards.py` `_signed`, which imports `shadow.trial.verdict` absolutely. Pytest and the Desktop harness both put a top-level `shadow` on `sys.path`, so neither catches it. The non-stats card prints that same `--stats` command as its last line. Report the journey as FAIL until the import is relative.
+- `results <id> --stats` used to crash in a real Hermes install with `ModuleNotFoundError: No module named 'shadow'`, because `shadow/trial/cards.py` imported `shadow.trial.verdict` absolutely. PR #8 made it relative and added `tests/test_relative_imports.py`. Pytest and the Desktop harness both put a top-level `shadow` on `sys.path`, so only this journey sees a regression of that kind. A traceback here is a FAIL.
 - `results <unknown-id>` says `No tests yet` even when other tests exist. Assert that text. Do not assume it means the profile is empty.
 - Without a TTY, `results` prints the card and returns without a menu. Use `pty` for `results-menu`.
 - Seeded fixtures carry fixture model IDs on provider `nous` with no credentials, so the menu's switch action (shown for Better results such as `result-better`) refuses with `[credentials_unknown]`. Driving a real switch needs a configured profile and is out of scope here.
