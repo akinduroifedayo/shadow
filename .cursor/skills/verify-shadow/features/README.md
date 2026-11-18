@@ -36,4 +36,5 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 - [Saved results](./saved-results.md) covers the newest result, a result by ID, the interactive result menu, `--stats`, idle status, and unknown IDs.
 - [Forget a saved test](./forget-test.md) covers deleting one test and all tests, with storage checks.
 - [Legacy storage copy](./legacy-storage-copy.md) covers the one-time copy from `plugin-data/shadow` to `plugin-data/shadow-trial` on first load.
+- [Trial preview](./trial-preview.md) covers the consent card, setup blocks, and the history-timeout path.
 - [Desktop page](./desktop-page.md) covers the `shadow-trial` page's verdict, blind pick and reveal, switch-anyway dialog, switch panel, and start card in the dev harness.

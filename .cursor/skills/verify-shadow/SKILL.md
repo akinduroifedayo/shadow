@@ -14,7 +14,7 @@ Shadow is a Hermes plugin (manifest name `shadow-trial`, see `plugin.yaml`). It 
 | `/shadow-trial <verb>` in a Hermes chat | No, unless the Hermes install has a working chat runtime and a model | See Gotchas |
 | The real Hermes Desktop app, a live `shadow-demo` profile, anything that calls a model | No | macOS app plus provider credentials; see "Not driveable" |
 
-All recipes run through one helper, `scripts/shadow-verify` (path relative to this skill). The feature map in [`features/README.md`](features/README.md) is the maintained list of what to drive.
+Run the installed CLI and fixture Desktop recipes with `scripts/shadow-verify` (path relative to this skill). The feature map in [`features/README.md`](features/README.md) is the maintained list of what to drive.
 
 ## Environment
 
@@ -136,7 +136,7 @@ Proof standards:
 - Capture the action and the resulting state: the CLI transcript plus a second, read-only view (`db`, `files`, or a follow-up `results`/`status`).
 - Check side effects: rows removed by `forget`, files created by the legacy copy, and files that must stay byte-identical (sha256 before and after).
 - Shadow's CLI prints refusals as text and still exits 0 (for example "No tests yet" or "[credentials_unknown] Nothing was called."). Assert on the text, not only `exit=`. An `exit=1` with a Python traceback is a crash, which is a failure.
-- No mocks except the existing production-isolated seams: Desktop `FixtureSource` and the fixture finalizer in `serve.py`.
+- Use the Desktop fixture source and fixture finalizer for UI checks. The preview check (`scripts/check-preview.py`) runs the real export wrapper, selection and RPC handler on synthetic export lines and injected subprocess failures. It does not measure live export latency; the native preview recipe does.
 - Record which entry point you used. A journey proven only through the dev harness is not proof of the real Desktop app.
 
 ## Cleanup
@@ -159,7 +159,15 @@ These need a Mac with Hermes Desktop, a real profile, or provider credentials. R
 
 ## Helpers
 
-`scripts/shadow-verify` is the only helper. `$S help` prints every subcommand. Exit codes: 0 ok, 2 usage or precondition error, otherwise the failing step's code. Feature recipes in `features/` use it exclusively.
+- `scripts/shadow-verify` drives the installed CLI and the Desktop fixture. `$S help` lists its subcommands. Exit codes: 0 ok, 2 usage or precondition error, otherwise the failing step's code.
+- `python3 .cursor/skills/verify-shadow/scripts/check-preview.py` checks the preview's consent card, its redaction of kept history, and its explicit reason when history cannot be read, without Hermes credentials. See [Trial preview](features/trial-preview.md).
+
+## Maintain this skill
+
+1. Compare the [feature map](features/README.md) with the commands and Desktop actions in the current source. Add a recipe for any new journey.
+2. Use a fresh run and run doctor before driving a journey. Check its visible result and any storage effect. Repeat doctor after unexpected behavior.
+3. Separate wrong instructions, broken verification tools, and product regressions. Fix the first two here. Report product regressions without rewriting expectations to match them.
+4. Clean up, check that the evidence remains, and record which journeys passed, failed, or could not run. Report native Desktop separately from fixture Desktop. Keep the receipts out of Git.
 
 ## Gotchas
 
