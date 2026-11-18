@@ -44,8 +44,8 @@ def test_correct_export_command():
     def run(argv, **kw):
         calls.append(argv)
         return SimpleNamespace(stdout='{"id":"fixture"}\n')
-    assert export_sessions('demo', runner=run) == [{'id': 'fixture'}]
-    assert calls == [['hermes', '-p', 'demo', 'sessions', 'export', '-', '--newer-than', '7d', '--redact']]
+    assert export_sessions('demo', runner=run, redact=str.upper) == [{'id': 'FIXTURE', 'messages': []}]
+    assert calls == [['hermes', '-p', 'demo', 'sessions', 'export', '-', '--newer-than', '7d']]
 
 
 def test_failed_setup_session_is_never_selected_for_a_trial(tmp_path):

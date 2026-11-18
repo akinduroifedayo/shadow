@@ -162,6 +162,7 @@
   "doctor.setting": "Missing {setting}. Set it with: hermes config set {setting} true",
   "trial.invalid": "Shadow could not read that command. Use /shadow-trial for the commands.",
   "trial.unavailable": "Shadow could not start this test. Run the setup check.",
+  "trial.history_unavailable": "Shadow could not read your recent history, so it did not prepare this test. Nothing was sent or started. Try again in a moment.",
   "trial.isolation_required": "Replay context and memory isolation are not verified. Run the setup check before starting a test: /shadow-trial doctor --verify or hermes shadow-trial doctor --verify",
   "doctor.verified": "Replay context and memory isolation was checked on {date}. This Hermes and these Shadow files match that check.",
   "doctor.verified_no_memory": "Replay context and memory isolation was checked on {date}. This profile has no saved memory. The replay received no memory guidance or memory blocks. This Hermes and these Shadow files match that check.",

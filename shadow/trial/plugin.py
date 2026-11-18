@@ -22,7 +22,7 @@ from .controller import ControllerLauncher, IsolationRequired
 from .engine import TrialEngine, estimate
 from .probe import SETUP_PREFIX, active_home, claim_setup_job, confirm_line, failure_text, finish_setup, is_setup_request, launch_setup, new_job, setup_request_text, success_text
 from .judge import JudgeChoice, choose_judge, judge_options
-from .picking import Turn, export_sessions, pick_turns
+from .picking import HistoryUnavailable, Turn, export_sessions, pick_turns
 from .reads import SafeReads
 from .safety import ReplayGuard
 from .tiers import profile_service_tiers, normal_service_tiers, prices_for_tiers
@@ -203,7 +203,7 @@ class TrialPlugin:
                 self.store.save(record)
             return self.result(record, terminal=terminal, stats=args.stats) if 'totals' in record else self.status(record)
         except (ValueError, TypeError, KeyError, OSError) as exc:
-            if isinstance(exc, (CommandError, ModelUnavailable)):
+            if isinstance(exc, (CommandError, ModelUnavailable, HistoryUnavailable)):
                 return str(exc)
             if isinstance(exc, ValueError) and str(exc).startswith(('The judge', 'No model called', 'Shadow needs')):
                 return str(exc)
