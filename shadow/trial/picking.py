@@ -59,17 +59,12 @@ class _Redactor:
     """Force-redact every string and key in what Shadow keeps, the way `sessions export --redact` does."""
 
     def __init__(self, redact):
+        # No memoizing: host redaction reads vault and secret registries that can change mid-export.
         self.redact = redact
-        self.cache = {}
 
     def __call__(self, value):
         if isinstance(value, str):
-            clean = self.cache.get(value)
-            if clean is None:
-                clean = self.redact(value)
-                if len(value) <= 256 and len(self.cache) < 4096:
-                    self.cache[value] = clean
-            return clean
+            return self.redact(value)
         if isinstance(value, list):
             return [self(v) for v in value]
         if isinstance(value, dict):
@@ -111,18 +106,21 @@ def export_sessions(profile, days=7, runner=subprocess.run, redact=None):
     redact = redact or _host_redact()
     if redact is None:
         raise HistoryUnavailable()
-    clean = _Redactor(redact)
-    sessions = None
-    try:
-        result = runner(['hermes', '-p', profile, 'sessions', 'export', '-', '--newer-than', f'{days}d'],
-                        capture_output=True, text=True, check=True, timeout=60)
-        sessions = [_project(json.loads(line), clean) for line in result.stdout.splitlines() if line.strip()]
-    except Exception:  # any failure, including in host redaction, must not carry export text onward
-        sessions = None
-    # Raised outside the handler so neither the message nor the exception chain holds export text.
+    sessions = _read_projected(profile, days, runner, _Redactor(redact))
+    # Raised here, after the reading frame is gone, so neither the exception chain nor the
+    # traceback's frame locals hold export text.
     if sessions is None:
         raise HistoryUnavailable()
     return sessions
+
+
+def _read_projected(profile, days, runner, clean):
+    try:
+        result = runner(['hermes', '-p', profile, 'sessions', 'export', '-', '--newer-than', f'{days}d'],
+                        capture_output=True, text=True, check=True, timeout=60)
+        return [_project(json.loads(line), clean) for line in result.stdout.splitlines() if line.strip()]
+    except Exception:  # any failure, including in host redaction, must not carry export text onward
+        return None
 
 
 def _history_row(message):
@@ -205,7 +203,8 @@ def _left_out(message, messages, index, source, cwd_ok, shadow, replay_suffix, e
     if source in excluded_sources:
         return 'source'
     replies = []
-    for row in messages[index + 1:]:
+    for position in range(index + 1, len(messages)):  # indexed, not sliced: a slice copies the whole rest
+        row = messages[position]
         if row.get('role') == 'user':
             break
         if row.get('role') == 'assistant':
